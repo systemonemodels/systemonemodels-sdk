@@ -10,6 +10,7 @@ systemone push ./runs/my-run/model --repo me/my-model
 
 from __future__ import annotations
 
+import os
 import socket
 import sys
 import webbrowser
@@ -34,7 +35,7 @@ from systemone import cache as local_cache
 from systemone.auth import can_open_browser, device_login
 from systemone.client import Client
 from systemone.discover import Candidate, describe, discover, next_version, parse_selection
-from systemone.errors import NotFound, SystemOneError
+from systemone.errors import ApiError, AuthError, ConnectionFailed, NotFound, SystemOneError
 from systemone.inspect import build_manifest, inspect, split_front_matter
 from systemone.publish import Part, Release, home_mentions, merge, model_card, releases
 from systemone.transfer import pull_version, push_files
@@ -147,11 +148,63 @@ def login(
     console.print(f"[dim]Token stored in {path} (0600)[/dim]")
 
 
+def _revoke(stored: config.Config) -> str:
+    """Revoke the stored token on its registry: "revoked", "invalid", or why not.
+
+    Found by the display prefix the registry keeps for every token, which is the
+    start of the token itself; the raw value is never sent anywhere but in the
+    Authorization header, as on every other request.
+    """
+    token = stored.token or ""
+    try:
+        with Client(stored) as registry:
+            mine = [
+                entry
+                for entry in registry.tokens()
+                if entry.get("prefix") and token.startswith(str(entry["prefix"]))
+            ]
+            if len(mine) != 1:
+                return "it is not among your account's tokens"
+            registry.revoke_token(str(mine[0]["id"]))
+    except AuthError:
+        return "invalid"
+    except ConnectionFailed:
+        return "the registry could not be reached"
+    except ApiError as exc:
+        return f"the registry answered HTTP {exc.status}"
+    except SystemOneError as exc:
+        return str(exc)
+    return "revoked"
+
+
 @app.command()
 def logout() -> None:
-    """Forget the stored token."""
-    config.clear()
-    console.print("Signed out. The token itself is still valid — revoke it in settings.")
+    """Sign out: revoke the stored token, and forget this machine's login.
+
+    Everything `login` stored goes, the registry's address included, so the
+    next `systemone login` goes to the default registry unless given
+    --endpoint. A token given in SYSTEMONE_TOKEN is never touched.
+    """
+    stored = config.load(environment=False)
+    if not stored.token:
+        config.clear()
+        console.print("Not signed in on this machine.")
+    else:
+        outcome = _revoke(stored)
+        config.clear()
+        site = config.web_url(stored.endpoint)
+        if outcome == "revoked":
+            console.print(f"Signed out of {site}. The token was revoked.")
+        elif outcome == "invalid":
+            console.print(f"Signed out of {site}. The token had already stopped working.")
+        else:
+            console.print(f"Signed out on this machine, but the token is still valid: {outcome}.")
+            console.print(f"Revoke it at [cyan]{site}/settings/tokens[/cyan].")
+    if os.environ.get(config.ENV_TOKEN):
+        errs.print(
+            "[yellow]SYSTEMONE_TOKEN is set in this shell and still signs you in. "
+            "Unset it to stop.[/yellow]"
+        )
 
 
 @app.command()

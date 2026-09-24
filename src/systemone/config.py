@@ -68,8 +68,12 @@ def _path() -> Path:
     return config_dir() / "config.json"
 
 
-def load() -> Config:
-    """Environment beats the file, so CI can authenticate without writing one."""
+def load(environment: bool = True) -> Config:
+    """Environment beats the file, so CI can authenticate without writing one.
+
+    `environment=False` reads only what `login` stored: the token `logout` may
+    revoke, which must never be one a CI job was handed in SYSTEMONE_TOKEN.
+    """
     config = Config()
 
     path = _path()
@@ -83,6 +87,10 @@ def load() -> Config:
             # A corrupt config should not make the CLI unusable; the user can
             # simply log in again.
             pass
+
+    if not environment:
+        config.endpoint = config.endpoint.rstrip("/")
+        return config
 
     # `or`, not a default argument: an exported-but-empty variable, which is
     # what `export SYSTEMONE_TOKEN=` in a CI template leaves behind, must fall

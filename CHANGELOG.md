@@ -6,6 +6,9 @@
   it scans the folder and asks which models to publish — not after.
 - A registry that cannot be reached now points at
   `systemone login --endpoint URL`.
+- `logout` revokes the stored token on the registry instead of leaving it
+  valid, then forgets the login as before, registry address included. A token
+  given in `SYSTEMONE_TOKEN` is never touched.
 - A base model that came from Hugging Face — named by a Hugging Face model
   card, or by Laya Studio's `hub:` references — is published with
   `base_model_source: huggingface`, so the model page links to it until the

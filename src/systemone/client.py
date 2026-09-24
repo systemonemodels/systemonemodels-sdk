@@ -103,6 +103,14 @@ class Client:
         )
         return result
 
+    def tokens(self) -> list[dict[str, Any]]:
+        """The account's live access tokens: id, name and display prefix."""
+        found: list[dict[str, Any]] = self._request("GET", "/v1/tokens")
+        return found
+
+    def revoke_token(self, token_id: str) -> None:
+        self._request("DELETE", f"/v1/tokens/{token_id}")
+
     def poll_device_login(self, device_code: str) -> dict[str, Any]:
         result: dict[str, Any] = self._request(
             "POST", "/v1/auth/device/token", json={"device_code": device_code}

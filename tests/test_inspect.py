@@ -200,3 +200,25 @@ def test_an_explicit_licence_wins(tmp_path: Path) -> None:
     (tmp_path / "README.md").write_text("---\nlicense: mit\n---\n# x\n")
     document = yaml.safe_load(build_manifest(inspect(tmp_path), "me", "x", "apache-2.0"))
     assert document["license"] == "apache-2.0"
+
+
+def test_a_hugging_face_base_is_recorded_as_one(workspace: Path) -> None:
+    found = inspect(workspace.joinpath(*RUN_MODEL))
+    assert found.base_model_source == "huggingface"
+    document = yaml.safe_load(build_manifest(found, "me", "snake"))
+    assert document["base_model_source"] == "huggingface"
+
+
+def test_laya_hub_references_mean_hugging_face(tmp_path: Path) -> None:
+    write_export(tmp_path)  # rl_agent_config.json says "hub:aac6fef/laya-multilingual-mlx"
+    assert inspect(tmp_path).base_model_source == "huggingface"
+
+
+def test_a_base_of_unknown_origin_is_not_guessed(tmp_path: Path) -> None:
+    write_export(tmp_path)
+    (tmp_path / "rl_agent_config.json").write_text(
+        json.dumps({"fine_tuned": {"base_model": "acme/laya-base"}})
+    )
+    found = inspect(tmp_path)
+    assert (found.base_model, found.base_model_source) == ("acme/laya-base", None)
+    assert "base_model_source" not in yaml.safe_load(build_manifest(found, "me", "x"))

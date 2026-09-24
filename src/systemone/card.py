@@ -24,6 +24,8 @@ FRAMEWORK_LABELS = {
 
 LAYA = "[Laya](https://github.com/NandhaKishorM/laya)"
 
+BASE_HOSTS = {"huggingface": "https://huggingface.co", "github": "https://github.com"}
+
 
 def _size(n: float) -> str:
     for unit in ("B", "kB", "MB", "GB"):
@@ -112,7 +114,9 @@ def render(found: Inspected, repo: str, parts: Sequence[tuple[str, Inspected]]) 
     else:
         intro = "A decision model."
     if found.base_model:
-        intro += f" Fine-tuned from `{found.base_model}`."
+        host = BASE_HOSTS.get(found.base_model_source or "")
+        base = f"`{found.base_model}`"
+        intro += f" Fine-tuned from {f'[{base}]({host}/{found.base_model})' if host else base}."
     lines += [intro, ""]
 
     lines += _evaluation(found)

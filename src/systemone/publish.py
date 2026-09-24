@@ -104,6 +104,7 @@ def merge(parts: Sequence[Part]) -> Inspected:
     # Evaluation and the numbers behind it come from the same folder, or the
     # card would put one folder's accuracy beside another's latency.
     measured = next((f for f in found if f.evaluation), lead)
+    based = next((f for f in found if f.base_model), lead)
 
     frameworks: list[str] = []
     for part in parts:
@@ -115,7 +116,8 @@ def merge(parts: Sequence[Part]) -> Inspected:
         total_bytes=sum(f.total_bytes for f in found),
         architecture=next((f.architecture for f in found if f.architecture), None),
         capabilities=sorted({c for f in found for c in f.capabilities}),
-        base_model=next((f.base_model for f in found if f.base_model), None),
+        base_model=based.base_model,
+        base_model_source=based.base_model_source,
         summary=lead.summary or next((f.summary for f in found if f.summary), None),
         title=next((f.title for f in found if f.title), None),
         tags=slugs(tag for f in found for tag in f.tags)[:MAX_TAGS],

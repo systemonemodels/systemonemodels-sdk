@@ -87,6 +87,8 @@ def test_a_generated_card_lists_variants_and_how_to_load_one(workspace: Path) ->
     assert "systemone pull me/snake-balanced --variant mlx" in text
     assert 'snapshot_download("me/snake-balanced", variant="mlx") / "mlx"' in text
     assert "| Decision accuracy | 15.8% | **98.8%** [97.6%–99.4%] |" in text
+    link = "[`aac6fef/laya-multilingual-mlx`](https://huggingface.co/aac6fef/laya-multilingual-mlx)"
+    assert f"Fine-tuned from {link}." in text
 
 
 def test_files_naming_the_home_folder_are_reported(workspace: Path, tmp_path: Path) -> None:

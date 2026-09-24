@@ -6,6 +6,10 @@
   it scans the folder and asks which models to publish — not after.
 - A registry that cannot be reached now points at
   `systemone login --endpoint URL`.
+- A base model that came from Hugging Face — named by a Hugging Face model
+  card, or by Laya Studio's `hub:` references — is published with
+  `base_model_source: huggingface`, so the model page links to it until the
+  registry holds it too. Generated model cards link to it as well.
 
 ## 0.2.0
 

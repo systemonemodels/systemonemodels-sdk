@@ -85,13 +85,15 @@ What gets published, without retyping any of it:
 - **The manifest.** `systemone.yaml` — what the model decides, its runtime, and
   its evaluation: accuracy, calibration error and latency from a
   [Laya Studio](https://layastudio.biplovgautam.com.np/) run's `eval.json`, or
-  an export's own measurements. Pass `--manifest` to use your own, and check it
-  first with `systemone validate systemone.yaml`.
+  an export's own measurements. A base model that came from Hugging Face is
+  recorded as such, so the model page links to it. Pass `--manifest` to use your
+  own, and check it first with `systemone validate systemone.yaml`.
 - **The version.** The next minor version after the latest (`0.1.0`, `0.2.0`,
   …), or `--version`.
 
-`push` shows the plan and asks before sending anything, and warns when a file
-would publish the path of your home folder. `--dry-run` prints the manifests,
+`push` shows the plan before sending anything and, in a terminal, asks first —
+unless you named the repository with `--repo` or passed `--yes`. It warns when a
+file would publish the path of your home folder. `--dry-run` prints the manifests,
 cards and files and stops. `--namespace` publishes under an organization,
 `--license` overrides the card's licence, and `--all --yes` publishes
 everything found without a question, for scripts and CI.

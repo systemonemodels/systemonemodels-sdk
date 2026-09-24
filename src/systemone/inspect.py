@@ -82,6 +82,9 @@ class Inspected:
     architecture: str | None = None
     capabilities: list[str] = field(default_factory=list)
     base_model: str | None = None
+    # Where base_model lives while the registry does not hold it: "huggingface"
+    # when the files say so, which lets the model page link to it.
+    base_model_source: str | None = None
     summary: str | None = None
     title: str | None = None
     tags: list[str] = field(default_factory=list)
@@ -356,12 +359,19 @@ def inspect(source: Path) -> Inspected:
         found.origin = "laya-export" if export else "laya-run" if run_root else None
 
     # The card's author chose its base model deliberately; LayaStudio's own
-    # records are the fallback.
-    found.base_model = (
-        repo_ref(meta.get("base_model"))
-        or repo_ref((agent.get("fine_tuned") or {}).get("base_model"))
-        or repo_ref(run.get("base_model"))
-    )
+    # records are the fallback. Both say where the base came from: a Hugging
+    # Face card names Hugging Face repositories, and LayaStudio's "hub:" prefix
+    # is its reference to one.
+    for raw, where in (
+        (meta.get("base_model"), "huggingface"),
+        ((agent.get("fine_tuned") or {}).get("base_model"), None),
+        (run.get("base_model"), None),
+    ):
+        if ref := repo_ref(raw):
+            found.base_model = ref
+            hub = isinstance(raw, str) and raw.startswith("hub:")
+            found.base_model_source = where or ("huggingface" if hub else None)
+            break
     found.license, found.license_name = _license(meta)
 
     fmt = weights_format(source)
@@ -419,6 +429,8 @@ def build_manifest(
         document["summary"] = found.summary
     if found.base_model and found.base_model != f"{namespace}/{model}":
         document["base_model"] = found.base_model
+        if found.base_model_source:
+            document["base_model_source"] = found.base_model_source
 
     document["capabilities"] = found.capabilities or ["choice"]
     if found.tags:

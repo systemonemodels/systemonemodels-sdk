@@ -1,0 +1,100 @@
+[project]
+# The distribution name; the import package and the command are both `systemone`.
+# PyPI compares names with separators removed, so "systemone" collides with an
+# unrelated existing project, "system-one".
+name = "systemonemodels"
+version = "0.1.0"
+description = "Command line and Python client for System One — the registry for decision models"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Biplov Gautam" }]
+keywords = [
+  "system-one",
+  "decision-models",
+  "model-registry",
+  "laya",
+  "jev",
+  "onnx",
+  "mlops",
+  "cli",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "Typing :: Typed",
+]
+dependencies = [
+  "httpx>=0.27",
+  "pyyaml>=6.0",
+  "rich>=13.7",
+  "typer>=0.12",
+]
+
+[project.urls]
+Homepage = "https://systemonemodels.tech"
+Documentation = "https://systemonemodels.tech/docs/sdk"
+Source = "https://github.com/systemonemodels/systemonemodels-sdk"
+Issues = "https://github.com/systemonemodels/systemonemodels-sdk/issues"
+Changelog = "https://github.com/systemonemodels/systemonemodels-sdk/blob/main/CHANGELOG.md"
+
+[project.scripts]
+systemone = "systemone.cli:app"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "ruff>=0.8",
+  "mypy>=1.13",
+  "types-pyyaml>=6.0",
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/systemone"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/systemone", "tests", "README.md", "CHANGELOG.md", "LICENSE", "pyproject.toml"]
+
+[tool.ruff]
+line-length = 100
+# The oldest Python the package supports, so no rule suggests syntax 3.10 lacks.
+target-version = "py310"
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "S"]
+ignore = ["S101"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test fixtures use made-up tokens on purpose.
+"tests/*" = ["S105", "S106"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+# Typer's command decorators are untyped, which makes every annotated
+# command read as untyped. The functions themselves are fully annotated.
+module = "systemone.cli"
+disallow_untyped_decorators = false

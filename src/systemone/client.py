@@ -8,7 +8,7 @@ connection at a time either way, and httpx gives connection reuse without it.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -175,38 +175,42 @@ class Client:
         manifest: str,
         artifacts: list[dict[str, Any]],
         notes: str | None = None,
+        readme: str | None = None,
     ) -> dict[str, Any]:
-        published: dict[str, Any] = self._request(
-            "POST",
-            f"/v1/models/{repo}/versions",
-            json={
-                "version": version,
-                "manifest_yaml": manifest,
-                "notes": notes,
-                "artifacts": artifacts,
-            },
-        )
+        """Publish a version. A readme becomes the repository's model card."""
+        body: dict[str, Any] = {
+            "version": version,
+            "manifest_yaml": manifest,
+            "notes": notes,
+            "artifacts": artifacts,
+        }
+        if readme is not None:
+            body["readme"] = readme
+        published: dict[str, Any] = self._request("POST", f"/v1/models/{repo}/versions", json=body)
         return published
 
     # --- bytes ------------------------------------------------------------
 
-    def put(self, url: str, data: bytes) -> str:
+    def put(self, url: str, data: bytes | Iterable[bytes], size: int | None = None) -> str:
         """Upload to a presigned URL.
 
         A plain client, not self._http: the presigned URL carries its own
         authorization, and sending our Authorization header alongside it makes
         some S3 implementations reject the request as doubly signed.
+
+        `data` may be chunks, so a large file is streamed from disk rather than
+        held in memory. Its `size` is then required: an explicit Content-Length
+        stops httpx from falling back to chunked encoding, which a presigned
+        PUT does not accept.
         """
+        headers = {"content-type": "application/octet-stream", "user-agent": USER_AGENT}
+        if not isinstance(data, bytes):
+            if size is None:
+                raise ValueError("size is required when streaming an upload")
+            headers["content-length"] = str(size)
         try:
             with httpx.Client(timeout=httpx.Timeout(60.0, write=1800.0)) as plain:
-                response = plain.put(
-                    url,
-                    content=data,
-                    headers={
-                        "content-type": "application/octet-stream",
-                        "user-agent": USER_AGENT,
-                    },
-                )
+                response = plain.put(url, content=data, headers=headers)
                 response.raise_for_status()
                 return str(response.headers.get("ETag", ""))
         except httpx.HTTPStatusError as exc:

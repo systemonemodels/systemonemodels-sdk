@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from systemone.inspect import build_manifest, inspect, walk
+from systemone.inspect import build_manifest, inspect, split_front_matter, walk
 
 
 def write_export(root: Path) -> None:
@@ -113,3 +113,90 @@ def test_a_model_is_never_its_own_base(tmp_path: Path) -> None:
     )
     document = yaml.safe_load(build_manifest(inspect(tmp_path), "biplov", "snake"))
     assert "base_model" not in document
+
+
+# --- model cards and training runs -------------------------------------------
+
+
+RUN_MODEL = ("runs", "snake-balanced-0923-005225", "model")
+ONNX_EXPORT = ("exports", "snake-balanced-0923-005225-onnx-int8")
+
+
+def test_front_matter_is_data_not_prose() -> None:
+    meta, body = split_front_matter("---\nlicense: mit\ntags: [a1]\n---\n\n# Title\n")
+    assert meta == {"license": "mit", "tags": ["a1"]}
+    assert body == "# Title\n"
+
+
+def test_a_card_without_front_matter_is_untouched() -> None:
+    text = "# Title\n\n---\n\nA rule above.\n"
+    assert split_front_matter(text) == ({}, text)
+    unclosed = "---\nnot: closed\n"
+    assert split_front_matter(unclosed) == ({}, unclosed)
+
+
+def test_a_checkpoint_is_described_by_its_run_and_its_card(workspace: Path) -> None:
+    found = inspect(workspace.joinpath(*RUN_MODEL))
+
+    assert found.origin == "laya-run"
+    assert found.title == "Snake · balanced"
+    assert found.framework == "mlx"
+    assert found.license == "apache-2.0"
+    # Tags from the card that are not valid tags are dropped, not published.
+    assert found.tags == ["laya", "mlx"]
+    assert found.base_model == "aac6fef/laya-multilingual-mlx"
+    assert found.readme is not None and found.readme.startswith("# Snake")
+    assert "license:" not in found.readme
+    assert found.evaluation == {
+        "suite": "Snake moves",
+        "decision_accuracy": 0.9883,
+        "calibration_error": 0.0017,
+        "median_latency_ms": 36.22,
+        "p95_latency_ms": 44.64,
+    }
+    assert found.details["base_metrics"]["accuracy"] == 0.158
+    assert (found.details["fixed"], found.details["broken"]) == (500, 2)
+
+
+def test_an_export_reports_what_it_measured_about_itself(workspace: Path) -> None:
+    found = inspect(workspace.joinpath(*ONNX_EXPORT))
+
+    assert found.origin == "laya-export"
+    assert found.evaluation == {
+        "suite": "Snake moves",
+        "decision_accuracy": 0.98,
+        "median_latency_ms": 101.26,
+    }
+    # The run's comparison was measured on the checkpoint, not on this file.
+    assert "base_metrics" not in found.details
+    assert found.details["metrics"] == {"n": 200}
+    # With no card of its own, it borrows its run's.
+    assert found.readme is not None and found.readme.startswith("# Snake")
+    # The borrowed card's tags describe the checkpoint, not this file.
+    assert found.tags == ["onnx", "int8"]
+
+
+def test_full_precision_is_not_worth_a_tag(workspace: Path) -> None:
+    found = inspect(workspace / "exports" / "snake-balanced-0923-005225-coreml")
+    assert found.precision is None
+    assert "float" not in found.tags
+
+
+def test_a_yes_no_question_is_a_classifier(workspace: Path) -> None:
+    found = inspect(workspace / "runs" / "guard-0922-233445" / "model")
+    assert found.capabilities == ["classify"]
+    assert found.readme is None
+
+
+def test_a_licence_outside_the_spec_is_kept_by_name(tmp_path: Path) -> None:
+    write_export(tmp_path)
+    (tmp_path / "README.md").write_text("---\nlicense: llama3\n---\n# x\n")
+    document = yaml.safe_load(build_manifest(inspect(tmp_path), "me", "x"))
+    assert (document["license"], document["license_name"]) == ("other", "llama3")
+
+
+def test_an_explicit_licence_wins(tmp_path: Path) -> None:
+    write_export(tmp_path)
+    (tmp_path / "README.md").write_text("---\nlicense: mit\n---\n# x\n")
+    document = yaml.safe_load(build_manifest(inspect(tmp_path), "me", "x", "apache-2.0"))
+    assert document["license"] == "apache-2.0"

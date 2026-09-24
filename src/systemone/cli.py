@@ -4,7 +4,8 @@ systemone login
 systemone search routing --capability route
 systemone show biplov/snake-balanced-multilingual
 systemone pull biplov/snake-balanced-multilingual --variant onnx-int8
-systemone push ./exports/my-model --repo me/my-model --variant onnx-int8
+systemone push                       # find the models here and choose
+systemone push ./runs/my-run/model --repo me/my-model
 """
 
 from __future__ import annotations
@@ -17,15 +18,25 @@ from typing import Annotated, Any, NoReturn
 
 import typer
 from rich.console import Console
-from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
+from rich.markup import escape
+from rich.progress import (
+    BarColumn,
+    DownloadColumn,
+    Progress,
+    TextColumn,
+    TimeRemainingColumn,
+    TransferSpeedColumn,
+)
 from rich.table import Table
 
 from systemone import __version__, config
 from systemone import cache as local_cache
 from systemone.auth import can_open_browser, device_login
 from systemone.client import Client
-from systemone.errors import SystemOneError
-from systemone.inspect import build_manifest, inspect
+from systemone.discover import Candidate, describe, discover, next_version, parse_selection
+from systemone.errors import NotFound, SystemOneError
+from systemone.inspect import build_manifest, inspect, split_front_matter
+from systemone.publish import Part, Release, home_mentions, merge, model_card, releases
 from systemone.transfer import pull_version, push_files
 
 app = typer.Typer(
@@ -46,10 +57,11 @@ def fail(message: str) -> NoReturn:
 
 
 def human(n: float) -> str:
+    # Decimal units, as Finder, Hugging Face and the upload progress bar count.
     for unit in ("B", "kB", "MB", "GB", "TB"):
-        if n < 1024 or unit == "TB":
+        if n < 1000 or unit == "TB":
             return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
-        n /= 1024
+        n /= 1000
     return f"{n:.1f} TB"
 
 
@@ -237,7 +249,9 @@ def show(repo: Annotated[str, typer.Argument(help="namespace/name")]) -> None:
     if evaluation.get("calibration_error") is not None:
         facts.add_row("calibration error", str(evaluation["calibration_error"]))
     if evaluation.get("median_latency_ms") is not None:
-        facts.add_row("median latency", f"{evaluation['median_latency_ms']} ms")
+        facts.add_row("median latency", f"{evaluation['median_latency_ms']:.1f} ms")
+    if evaluation.get("p95_latency_ms") is not None:
+        facts.add_row("p95 latency", f"{evaluation['p95_latency_ms']:.1f} ms")
     facts.add_row("downloads", str(model.get("downloads", 0)))
     console.print(facts)
 
@@ -360,93 +374,330 @@ def cache_clear(
     console.print(f"Freed {human(local_cache.clear())}")
 
 
-@app.command()
-def push(
-    source: Annotated[Path, typer.Argument(help="Directory to publish.")],
-    repo: Annotated[str, typer.Option("--repo", "-r", help="namespace/name")],
-    version: Annotated[str, typer.Option(help="Version string.")] = "0.1.0",
-    variant: Annotated[str, typer.Option(help="Place files under this folder.")] = "",
-    manifest: Annotated[
-        Path | None, typer.Option(help="Use this instead of inferring one.")
-    ] = None,
-    notes: Annotated[str | None, typer.Option(help="Release notes.")] = None,
-    private: Annotated[bool, typer.Option(help="Create the repository private.")] = False,
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show what would happen.")] = False,
+def _interactive() -> bool:
+    return sys.stdin.isatty()
+
+
+def _home(path: Path) -> str:
+    home = str(Path.home())
+    text = str(path)
+    return "~" + text[len(home) :] if text.startswith(home) else text
+
+
+def _show_candidates(candidates: list[Candidate], root: Path) -> None:
+    console.print(f"Found {len(candidates)} models under [bold]{escape(_home(root))}[/bold]\n")
+    table = Table(box=None, pad_edge=False, header_style="dim")
+    table.add_column("#", justify="right", style="cyan")
+    table.add_column("MODEL", no_wrap=True)
+    table.add_column("VARIANT", no_wrap=True)
+    table.add_column("SIZE", justify="right", style="dim", no_wrap=True)
+    table.add_column("FOLDER", style="dim", no_wrap=True, overflow="ellipsis")
+    for number, candidate in enumerate(candidates, 1):
+        table.add_row(
+            str(number),
+            candidate.name,
+            candidate.variant,
+            human(candidate.size_bytes),
+            escape(candidate.relative_to(root)),
+        )
+    console.print(table)
+
+
+def _ask_which(candidates: list[Candidate]) -> list[Candidate]:
+    console.print("\n[dim]Variants of one model are published together, a folder each.[/dim]")
+    while True:
+        answer = typer.prompt("Publish which? (e.g. 1,3-5 or all)")
+        try:
+            return [candidates[i] for i in parse_selection(answer, len(candidates))]
+        except ValueError as exc:
+            errs.print(f"[red]{exc}[/red]")
+
+
+def _existing_versions(registry: Client, repo: str, lenient: bool) -> list[str] | None:
+    """The versions a repository already has, or None when it does not exist."""
+    try:
+        return [str(entry["version"]) for entry in registry.versions(repo)]
+    except NotFound:
+        return None
+    except SystemOneError as exc:
+        if lenient:
+            return None
+        fail(f"{repo}: {exc}")
+
+
+def _publish(
+    registry: Client,
+    release: Release,
+    document: str,
+    card: str,
+    notes: str | None,
+    private: bool,
 ) -> None:
-    """Publish a directory as a version."""
-    source = source.expanduser().resolve()
-    if not source.is_dir():
-        fail(f"not a directory: {source}")
-    namespace, _, name = repo.partition("/")
-    if not namespace or not name:
-        fail("--repo must be namespace/name")
+    check = registry.validate_manifest(document)
+    if not check["valid"]:
+        for issue in check["issues"]:
+            errs.print(f"[red]{issue['path']}[/red]  {issue['message']}")
+        raise SystemOneError("the manifest is not valid; fix it or pass --manifest")
 
-    found = inspect(source)
-    if not found.files:
-        fail(f"no files under {source}")
+    if not release.exists:
+        registry.create_model(release.namespace, release.name, document, private)
+        console.print(f"created {release.repo}{' (private)' if private else ''}")
 
-    document = manifest.read_text() if manifest else build_manifest(found, namespace, name)
+    artifacts: list[dict[str, Any]] = []
+    deduplicated = 0
+    with Progress(
+        TextColumn("[dim]{task.description}"),
+        BarColumn(),
+        DownloadColumn(),
+        TransferSpeedColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task(release.repo, total=release.total_bytes)
 
+        def on_file(path: str) -> None:
+            progress.update(task, description=escape(path[-40:]))
+
+        def on_bytes(count: int) -> None:
+            progress.advance(task, count)
+
+        def tick(_path: str, size: int, _total: int, skipped: bool) -> None:
+            nonlocal deduplicated
+            if skipped:
+                deduplicated += size
+
+        for part in release.parts:
+            artifacts += push_files(
+                registry,
+                release.repo,
+                part.source,
+                part.found.files,
+                part.folder,
+                tick,
+                on_file=on_file,
+                on_bytes=on_bytes,
+            )
+
+    registry.publish_version(release.repo, release.version, document, artifacts, notes, card)
+    site = config.web_url(registry.config.endpoint)
     console.print(
-        f"[bold]{repo}[/bold]@{version}  {len(found.files)} files  {human(found.total_bytes)}"
+        f"[green]✓[/green] Published [bold]{release.repo}@{release.version}[/bold] "
+        f"with {len(artifacts)} files  [cyan]{site}/{release.repo}[/cyan]"
     )
-    if not manifest:
-        source_of_truth = "inferred from the export" if found.recognised else "a starting point"
-        console.print(f"[dim]manifest {source_of_truth}[/dim]")
-
-    if dry_run:
-        console.print()
-        console.print(document.rstrip())
-        console.print("\n[dim]files:[/dim]")
-        for path in found.files:
-            placed = path.relative_to(source).as_posix()
-            console.print(f"  {f'{variant}/' if variant else ''}{placed}")
-        return
-
-    with client() as registry:
-        check = registry.validate_manifest(document)
-        if not check["valid"]:
-            for issue in check["issues"]:
-                errs.print(f"[red]{issue['path']}[/red]  {issue['message']}")
-            fail("the manifest is not valid; fix it or pass --manifest")
-
-        try:
-            registry.model(repo)
-        except SystemOneError:
-            registry.create_model(namespace, name, document, private)
-            console.print(f"created {repo}")
-
-        deduplicated = 0
-        with Progress(
-            TextColumn("[dim]{task.description}"),
-            BarColumn(),
-            TextColumn("{task.completed}/{task.total} files"),
-            TimeRemainingColumn(),
-            console=console,
-        ) as progress:
-            task = progress.add_task("uploading", total=len(found.files))
-
-            def tick(path: str, size: int, _total: int, skipped: bool) -> None:
-                nonlocal deduplicated
-                if skipped:
-                    deduplicated += size
-                progress.update(task, advance=1, description=path[-40:])
-
-            try:
-                artifacts = push_files(registry, repo, source, found.files, variant, tick)
-            except SystemOneError as exc:
-                fail(str(exc))
-
-        try:
-            registry.publish_version(repo, version, document, artifacts, notes)
-        except SystemOneError as exc:
-            fail(str(exc))
-
-    console.print(f"Published [bold]{repo}@{version}[/bold] with {len(artifacts)} files")
     if deduplicated:
         console.print(
-            f"[dim]{human(deduplicated)} was already in the registry and was not sent[/dim]"
+            f"  [dim]{human(deduplicated)} was already in the registry and was not sent[/dim]"
         )
+
+
+@app.command()
+def push(
+    source: Annotated[
+        Path,
+        typer.Argument(help="A model folder, or a folder to search for models. Default: here."),
+    ] = Path("."),
+    repo: Annotated[
+        str | None,
+        typer.Option("--repo", "-r", help="namespace/name. Default: yours, named after the model."),
+    ] = None,
+    namespace: Annotated[
+        str | None, typer.Option("--namespace", "-n", help="Publish under this organization.")
+    ] = None,
+    version: Annotated[
+        str | None, typer.Option(help="Default: the next minor version, from 0.1.0.")
+    ] = None,
+    variant: Annotated[
+        str | None, typer.Option(help="Put one model's files under this folder.")
+    ] = None,
+    manifest: Annotated[
+        Path | None,
+        typer.Option(
+            help="Use this systemone.yaml instead of inferring one.", exists=True, dir_okay=False
+        ),
+    ] = None,
+    readme: Annotated[
+        Path | None,
+        typer.Option(
+            help="The model card. Default: the model's README.md.", exists=True, dir_okay=False
+        ),
+    ] = None,
+    license_: Annotated[
+        str | None,
+        typer.Option("--license", help="apache-2.0, mit, … Default: the model card's."),
+    ] = None,
+    notes: Annotated[str | None, typer.Option(help="Release notes.")] = None,
+    private: Annotated[bool, typer.Option(help="Create new repositories private.")] = False,
+    all_: Annotated[
+        bool, typer.Option("--all", help="Publish every model found, without asking which.")
+    ] = False,
+    yes: Annotated[bool, typer.Option("--yes", "-y", help="Do not ask for confirmation.")] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show the plan and stop.")] = False,
+) -> None:
+    """Publish models from a folder.
+
+    Point it at one model, or at a whole workspace: every model underneath is
+    found — trained checkpoints, and their ONNX and Core ML exports — and you
+    choose which to publish. Variants of one model share a repository, a folder
+    each. A README.md becomes the model card, its front matter the licence and
+    tags; without one, a card is written from the evaluation.
+    """
+    root = source.expanduser().resolve()
+    if not root.is_dir():
+        fail(f"not a directory: {root}")
+    target: tuple[str, str] | None = None
+    if repo is not None:
+        owner, _, name = repo.strip().partition("/")
+        if not owner or not name or "/" in name:
+            fail("--repo must be namespace/name")
+        target = (owner.lower(), name.lower())
+    interactive = _interactive()
+
+    here = describe(root)
+    candidates = [here] if here else discover(root)
+    listed = len(candidates) > 1
+
+    if not candidates:
+        if target is None:
+            fail(
+                f"no model found under {_home(root)}. A model folder holds model.onnx, "
+                "model.safetensors, a .gguf file or a .mlpackage. To publish this folder "
+                "as it is, pass --repo namespace/name."
+            )
+        found = inspect(root)
+        if not found.files:
+            fail(f"no files under {root}")
+        plan = [Release(target[1], [Part(root, (variant or "").strip("/"), found)])]
+    else:
+        chosen = candidates
+        if listed:
+            _show_candidates(candidates, root)
+            if not all_:
+                if not interactive:
+                    fail(
+                        "several models found. Pass --all to publish every one, "
+                        "or the folder of the one to publish."
+                    )
+                chosen = _ask_which(candidates)
+        if variant and len(chosen) > 1:
+            fail("--variant places one model, and several were chosen")
+        plan = releases(chosen, variant)
+
+    if target is not None:
+        if len(plan) > 1:
+            fail(
+                f"--repo names one repository, but the models chosen belong to {len(plan)}. "
+                "Choose one model's variants, or leave out --repo."
+            )
+        plan[0].namespace, plan[0].name = target
+    if len(plan) > 1 and (manifest or readme):
+        fail("--manifest and --readme describe one repository; choose one model")
+
+    with client() as registry:
+        owner_name = (namespace or "").strip().lower() or registry.config.username
+        if not owner_name and any(not r.namespace for r in plan):
+            try:
+                me = registry.whoami()
+            except SystemOneError:
+                me = None
+            owner_name = str(me["username"]) if me else None
+        if any(not r.namespace for r in plan) and not owner_name:
+            if not dry_run:
+                fail("Not signed in. Run `systemone login`, or pass --namespace.")
+            owner_name = "you"
+            errs.print("[yellow]Not signed in: 'you' stands in for your namespace.[/yellow]")
+
+        for release in plan:
+            release.namespace = release.namespace or str(owner_name)
+            existing = _existing_versions(registry, release.repo, lenient=dry_run)
+            release.exists = existing is not None
+            release.version = version or next_version(existing or [])
+
+        documents: list[tuple[Release, str, str, bool]] = []
+        for release in plan:
+            found = merge(release.parts)
+            document = (
+                manifest.read_text()
+                if manifest
+                else build_manifest(found, release.namespace, release.name, license_)
+            )
+            if readme:
+                _, card = split_front_matter(readme.read_text())
+                generated = False
+            else:
+                card, generated = model_card(release, found)
+            documents.append((release, document, card, generated))
+
+        console.print()
+        table = Table(box=None, pad_edge=False, header_style="dim")
+        table.add_column("REPOSITORY")
+        table.add_column("VERSION")
+        table.add_column("FILES", justify="right")
+        table.add_column("SIZE", justify="right")
+        table.add_column("CARD", style="dim")
+        table.add_column("FOLDERS", style="dim")
+        for release, _, _, generated in documents:
+            table.add_row(
+                f"[bold]{release.repo}[/bold]{'' if release.exists else ' [green]new[/green]'}",
+                release.version,
+                str(release.files),
+                human(release.total_bytes),
+                "generated" if generated else "README.md",
+                ", ".join(release.folders) or "—",
+            )
+        console.print(table)
+        if len(plan) == 1 and target is None:
+            console.print("[dim]Another name? Pass --repo namespace/name.[/dim]")
+
+        exposed = [
+            f"{release.name}/{hit}" if len(plan) > 1 else hit
+            for release in plan
+            for hit in home_mentions(release.parts)
+        ]
+        if exposed:
+            shown = ", ".join(exposed[:4]) + (
+                f" and {len(exposed) - 4} more" if len(exposed) > 4 else ""
+            )
+            errs.print(
+                f"[yellow]note[/yellow]  {len(exposed)} "
+                f"{'file mentions' if len(exposed) == 1 else 'files mention'} your home folder "
+                f"({escape(str(Path.home()))}) and will be readable by anyone who can see the "
+                f"repository: {escape(shown)}"
+            )
+
+        if dry_run:
+            for release, document, card, generated in documents:
+                console.print(f"\n[bold]{release.repo}@{release.version}[/bold]  systemone.yaml")
+                console.print(document.rstrip(), markup=False, highlight=False)
+                console.print(
+                    f"\n[dim]model card ({'generated' if generated else 'README.md'}):[/dim]"
+                )
+                console.print(card.rstrip(), markup=False, highlight=False)
+                console.print("\n[dim]files:[/dim]")
+                for part in release.parts:
+                    for path in part.found.files:
+                        placed = path.relative_to(part.source).as_posix()
+                        console.print(
+                            f"  {part.folder + '/' if part.folder else ''}{escape(placed)}"
+                        )
+            return
+
+        # A folder named with --repo publishes straight away, as it always has;
+        # anything the CLI worked out or the user picked from a list is confirmed.
+        if interactive and not yes and (target is None or listed):
+            count = len(plan)
+            question = f"Publish {'it' if count == 1 else f'these {count}'}?"
+            if not typer.confirm(question, default=True):
+                raise typer.Exit(0)
+
+        failures = 0
+        for release, document, card, _ in documents:
+            try:
+                _publish(registry, release, document, card, notes, private)
+            except SystemOneError as exc:
+                failures += 1
+                errs.print(f"[red]error[/red]  {release.repo}: {exc}")
+        if failures:
+            raise typer.Exit(1)
 
 
 if __name__ == "__main__":

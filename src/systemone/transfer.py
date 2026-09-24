@@ -9,18 +9,35 @@ Kept separate from the CLI so the same logic is importable:
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from systemone import cache
-from systemone.client import Client, sha256_file
+from systemone.client import CHUNK, Client, sha256_file
 from systemone.errors import SystemOneError
 from systemone.inspect import walk
 
 Progress = Callable[[str, int, int, bool], None]
 """(path, bytes done, bytes total, deduplicated)"""
+
+
+def _read(
+    path: Path, offset: int, length: int, on_bytes: Callable[[int], None] | None
+) -> Iterator[bytes]:
+    """A byte range of a file, a chunk at a time, reporting each as it goes."""
+    with path.open("rb") as handle:
+        handle.seek(offset)
+        remaining = length
+        while remaining > 0:
+            chunk = handle.read(min(CHUNK, remaining))
+            if not chunk:
+                break
+            remaining -= len(chunk)
+            if on_bytes:
+                on_bytes(len(chunk))
+            yield chunk
 
 
 def push_files(
@@ -30,14 +47,24 @@ def push_files(
     files: Iterable[Path],
     prefix: str = "",
     on_progress: Progress | None = None,
+    *,
+    on_file: Callable[[str], None] | None = None,
+    on_bytes: Callable[[int], None] | None = None,
 ) -> list[dict[str, Any]]:
-    """Upload each file and return the artifact records for a version."""
+    """Upload each file and return the artifact records for a version.
+
+    `on_file` hears each path as work on it starts, and `on_bytes` each chunk
+    as it leaves, so a progress bar can move during a large file rather than
+    only between files.
+    """
     artifacts: list[dict[str, Any]] = []
 
     for path in files:
         relative = path.relative_to(source).as_posix()
         placed = f"{prefix.strip('/')}/{relative}" if prefix.strip("/") else relative
         size = path.stat().st_size
+        if on_file:
+            on_file(placed)
 
         # Hashed before anything is sent, so a file the registry already holds
         # is recognised and skipped. Streamed, so a 20GB checkpoint is not read
@@ -49,17 +76,19 @@ def push_files(
         try:
             if deduplicated:
                 result = client.finish_upload(repo, ticket["upload_id"], sha256=digest)
+                if on_bytes:
+                    on_bytes(size)
             elif ticket.get("url"):
-                client.put(ticket["url"], path.read_bytes())
+                client.put(ticket["url"], _read(path, 0, size, on_bytes), size)
                 result = client.finish_upload(repo, ticket["upload_id"], sha256=digest)
             else:
                 part_size = ticket["part_size"]
                 parts = []
-                with path.open("rb") as handle:
-                    for part in ticket["parts"]:
-                        handle.seek((part["part_number"] - 1) * part_size)
-                        etag = client.put(part["url"], handle.read(part_size))
-                        parts.append({"part_number": part["part_number"], "etag": etag})
+                for part in ticket["parts"]:
+                    offset = (part["part_number"] - 1) * part_size
+                    length = max(0, min(part_size, size - offset))
+                    etag = client.put(part["url"], _read(path, offset, length, on_bytes), length)
+                    parts.append({"part_number": part["part_number"], "etag": etag})
                 result = client.finish_upload(repo, ticket["upload_id"], parts=parts, sha256=digest)
         except Exception:
             # Release the reservation rather than leaving an abandoned multipart

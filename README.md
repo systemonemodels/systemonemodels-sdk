@@ -49,19 +49,56 @@ cache.
 ## Publish
 
 ```bash
-systemone create you/support-router
-systemone push ./support-router --repo you/support-router --version 0.1.0
+cd ~/my-workspace
+systemone push
 ```
 
-`push` uploads a directory as a new version and preserves its folder structure.
-Files the registry already holds are never sent again, so republishing with one
-changed file sends one file. `--variant onnx-int8` places the files under that
-folder, so one repository can hold several exports of a model.
+Run `push` in a folder and it finds every model underneath, however deep —
+trained checkpoints, ONNX and Core ML exports, GGUF files, any folder holding
+`model.onnx`, `model.safetensors`, a `.gguf` or an `.mlpackage` — lists them,
+and asks which to publish (`1,3-5` or `all`). Datasets, virtual environments and
+caches are never searched.
 
-A `systemone.yaml` manifest describes what the model decides, how it was
-evaluated and what it was fine-tuned from. `push` infers one from a
-[Laya Studio](https://layastudio.biplovgautam.com.np/) export; pass `--manifest`
-to use your own, and check it first with `systemone validate systemone.yaml`.
+```
+ #  MODEL                        VARIANT        SIZE  FOLDER
+ 1  banking77-balanced           mlx        646.8 MB  runs/banking77-balanced-0922-234657/model
+ 2  snake-balanced-multilingual  mlx        646.8 MB  runs/snake-balanced-multilingual-0923-005225/model
+ 3  snake-balanced-multilingual  onnx-int8  342.7 MB  exports/snake-balanced-multilingual-0923-005225-onnx-int8
+```
+
+Variants of one model are published together, as one version of one
+repository with a folder each, so `systemone pull you/snake-balanced-multilingual
+--variant onnx-int8` fetches only that folder. A model on its own keeps its
+files at the top of the repository, the way it sits on disk.
+
+To publish one folder under a name of your choosing:
+
+```bash
+systemone push ./runs/snake/model --repo you/laya-snake
+```
+
+What gets published, without retyping any of it:
+
+- **The model card.** The folder's `README.md`, with its Hugging Face front
+  matter read for the licence, tags and base model rather than shown. A model
+  without one gets a card written from its evaluation, questions and variants.
+- **The manifest.** `systemone.yaml` — what the model decides, its runtime, and
+  its evaluation: accuracy, calibration error and latency from a
+  [Laya Studio](https://layastudio.biplovgautam.com.np/) run's `eval.json`, or
+  an export's own measurements. Pass `--manifest` to use your own, and check it
+  first with `systemone validate systemone.yaml`.
+- **The version.** The next minor version after the latest (`0.1.0`, `0.2.0`,
+  …), or `--version`.
+
+`push` shows the plan and asks before sending anything, and warns when a file
+would publish the path of your home folder. `--dry-run` prints the manifests,
+cards and files and stops. `--namespace` publishes under an organization,
+`--license` overrides the card's licence, and `--all --yes` publishes
+everything found without a question, for scripts and CI.
+
+Files the registry already holds are never sent again, so republishing with one
+changed file sends one file, and large files stream from disk with a progress
+bar that moves by the byte.
 
 ## In Python
 

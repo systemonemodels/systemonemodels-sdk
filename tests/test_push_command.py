@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -215,8 +216,10 @@ def test_a_missing_card_file_is_a_clear_error(workspace: Path, registry: Registr
         cli.app, ["push", str(run_model(workspace)), "--readme", str(workspace / "nope.md")]
     )
     assert result.exit_code == 2
-    # The message sits in a bordered panel that wraps long paths; read it flat.
-    flat = " ".join(result.output.replace("│", " ").split())
+    # The message sits in a bordered panel that wraps long paths, and Typer
+    # colours it when it detects CI; read it flat and plain.
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    flat = " ".join(plain.replace("│", " ").split())
     assert "Invalid value for '--readme'" in flat
     assert registry.published == []
 

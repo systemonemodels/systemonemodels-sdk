@@ -79,7 +79,9 @@ def push_files(
                 if on_bytes:
                     on_bytes(size)
             elif ticket.get("url"):
-                client.put(ticket["url"], _read(path, 0, size, on_bytes), size)
+                client.put(
+                    ticket["url"], _read(path, 0, size, on_bytes), size, ticket.get("headers")
+                )
                 result = client.finish_upload(repo, ticket["upload_id"], sha256=digest)
             else:
                 part_size = ticket["part_size"]
@@ -87,7 +89,12 @@ def push_files(
                 for part in ticket["parts"]:
                     offset = (part["part_number"] - 1) * part_size
                     length = max(0, min(part_size, size - offset))
-                    etag = client.put(part["url"], _read(path, offset, length, on_bytes), length)
+                    etag = client.put(
+                        part["url"],
+                        _read(path, offset, length, on_bytes),
+                        length,
+                        part.get("headers"),
+                    )
                     parts.append({"part_number": part["part_number"], "etag": etag})
                 result = client.finish_upload(repo, ticket["upload_id"], parts=parts, sha256=digest)
         except Exception:

@@ -200,7 +200,13 @@ class Client:
 
     # --- bytes ------------------------------------------------------------
 
-    def put(self, url: str, data: bytes | Iterable[bytes], size: int | None = None) -> str:
+    def put(
+        self,
+        url: str,
+        data: bytes | Iterable[bytes],
+        size: int | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> str:
         """Upload to a presigned URL.
 
         A plain client, not self._http: the presigned URL carries its own
@@ -211,12 +217,18 @@ class Client:
         held in memory. Its `size` is then required: an explicit Content-Length
         stops httpx from falling back to chunked encoding, which a presigned
         PUT does not accept.
+
+        `headers` are the ones the registry's ticket says the signature covers
+        — the size, and the file's SHA-256 — sent exactly as given so the store
+        can refuse bytes that differ from what was declared.
         """
-        headers = {"content-type": "application/octet-stream", "user-agent": USER_AGENT}
+        sent = {"content-type": "application/octet-stream", "user-agent": USER_AGENT}
+        sent.update(headers or {})
         if not isinstance(data, bytes):
             if size is None:
                 raise ValueError("size is required when streaming an upload")
-            headers["content-length"] = str(size)
+            sent["content-length"] = str(size)
+        headers = sent
         try:
             with httpx.Client(timeout=httpx.Timeout(60.0, write=1800.0)) as plain:
                 response = plain.put(url, content=data, headers=headers)

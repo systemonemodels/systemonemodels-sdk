@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.2
+
+- Uploads send the headers the registry's ticket says its signature covers
+  (the size, and the file's SHA-256), so the store itself refuses bytes that
+  differ from what was declared. Needed to publish to registries from
+  2026-09-25 on; older clients get "Storage refused the upload (HTTP 403)".
+
 ## 0.2.1
 
 - `push` checks that you are signed in, and that the registry answers, before

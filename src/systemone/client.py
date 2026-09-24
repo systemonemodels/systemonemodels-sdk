@@ -72,7 +72,8 @@ class Client:
             # instead of a traceback, with the setting that most often causes it.
             raise ConnectionFailed(
                 f"Could not reach {self.config.endpoint} ({_reason(exc)}). Check your "
-                "connection, or point SYSTEMONE_ENDPOINT at the right registry."
+                "connection, or choose the registry with `systemone login --endpoint URL` "
+                "or SYSTEMONE_ENDPOINT."
             ) from exc
 
         if response.status_code == 401:

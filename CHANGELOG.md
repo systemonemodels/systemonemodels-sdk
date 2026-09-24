@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1
+
+- `push` checks that you are signed in, and that the registry answers, before
+  it scans the folder and asks which models to publish — not after.
+- A registry that cannot be reached now points at
+  `systemone login --endpoint URL`.
+
 ## 0.2.0
 
 - `systemone push` finds the models in a folder and its subfolders — trained

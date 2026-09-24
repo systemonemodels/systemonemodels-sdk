@@ -6,7 +6,7 @@ with Client() as registry:
     registry.search("routing", capability="route")
 """
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 from systemone.client import Client  # noqa: E402
 from systemone.errors import (  # noqa: E402

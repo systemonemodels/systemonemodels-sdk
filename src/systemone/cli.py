@@ -552,6 +552,19 @@ def push(
         target = (owner.lower(), name.lower())
     interactive = _interactive()
 
+    # Before anything is scanned or asked: finding out after choosing models
+    # that you were never signed in wastes the choosing.
+    signed_in_as: str | None = None
+    if not dry_run:
+        with client() as probe:
+            try:
+                me = probe.whoami()
+            except SystemOneError as exc:
+                fail(str(exc))
+        if not me:
+            fail("Not signed in. Run `systemone login`.")
+        signed_in_as = str(me["username"])
+
     here = describe(root)
     candidates = [here] if here else discover(root)
     listed = len(candidates) > 1
@@ -593,7 +606,7 @@ def push(
         fail("--manifest and --readme describe one repository; choose one model")
 
     with client() as registry:
-        owner_name = (namespace or "").strip().lower() or registry.config.username
+        owner_name = (namespace or "").strip().lower() or signed_in_as or registry.config.username
         if not owner_name and any(not r.namespace for r in plan):
             try:
                 me = registry.whoami()
@@ -602,7 +615,7 @@ def push(
             owner_name = str(me["username"]) if me else None
         if any(not r.namespace for r in plan) and not owner_name:
             if not dry_run:
-                fail("Not signed in. Run `systemone login`, or pass --namespace.")
+                fail("Not signed in. Run `systemone login`.")
             owner_name = "you"
             errs.print("[yellow]Not signed in: 'you' stands in for your namespace.[/yellow]")
 

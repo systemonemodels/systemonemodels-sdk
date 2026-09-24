@@ -13,7 +13,7 @@ from typer.testing import CliRunner
 
 from systemone import cli
 from systemone.config import Config
-from systemone.errors import NotFound
+from systemone.errors import AuthError, NotFound
 
 runner = CliRunner()
 
@@ -21,6 +21,7 @@ runner = CliRunner()
 class Registry:
     def __init__(self, existing: dict[str, list[str]] | None = None) -> None:
         self.config = Config(endpoint="https://api.test", token="t", username="me")
+        self.signed_in = True
         self.existing = existing or {}
         self.created: list[tuple[str, bool]] = []
         self.published: list[dict[str, Any]] = []
@@ -32,6 +33,8 @@ class Registry:
         return None
 
     def whoami(self) -> dict[str, Any]:
+        if not self.signed_in:
+            raise AuthError("Not signed in. Run `systemone login`.")
         return {"username": "me"}
 
     def versions(self, repo: str) -> list[dict[str, Any]]:
@@ -227,3 +230,24 @@ def test_a_missing_card_file_is_a_clear_error(workspace: Path, registry: Registr
 def test_sizes_are_decimal_like_the_progress_bar() -> None:
     assert cli.human(999) == "999 B"
     assert cli.human(678_200_000) == "678.2 MB"
+
+
+def test_signing_in_is_checked_before_anything_is_asked(
+    workspace: Path, registry: Registry, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry.signed_in = False
+    monkeypatch.setattr(cli, "_interactive", lambda: True)
+    result = runner.invoke(cli.app, ["push", str(workspace)], input="1\ny\n")
+
+    assert result.exit_code == 1
+    assert "Not signed in" in result.output
+    assert "Found" not in result.output
+    assert registry.published == []
+
+
+def test_a_dry_run_needs_no_account(workspace: Path, registry: Registry) -> None:
+    registry.signed_in = False
+    registry.config.username = None
+    result = runner.invoke(cli.app, ["push", str(workspace), "--all", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "you/snake-balanced" in result.output

@@ -24,7 +24,9 @@ from pathlib import Path
 from typing import Any
 
 WEIGHT_FILES = ("model.onnx", "model.safetensors")
-WEIGHT_SUFFIXES = (".gguf",)
+# Any of these directly in a folder makes it a model: Hugging Face checkpoints
+# (sharded safetensors, PyTorch bins), GGUF, exported graphs.
+WEIGHT_SUFFIXES = (".safetensors", ".gguf", ".pt", ".pth", ".ckpt", ".tflite", ".onnx")
 WEIGHT_DIRS = (".mlpackage",)
 SKIP_DIRS = {
     ".git",
@@ -99,10 +101,22 @@ def weights_format(directory: Path) -> str | None:
         return "onnx"
     if any(c.is_dir() and c.name.endswith(WEIGHT_DIRS) for c in children):
         return "coreml"
-    if "model.safetensors" in names:
-        return "safetensors"
-    if any(c.is_file() and c.name.endswith(WEIGHT_SUFFIXES) for c in children):
-        return "gguf"
+    files = [c.name for c in children if c.is_file()]
+    for suffix, fmt in (
+        (".safetensors", "safetensors"),
+        (".gguf", "gguf"),
+        (".onnx", "onnx"),
+        (".pt", "pytorch"),
+        (".pth", "pytorch"),
+        (".ckpt", "pytorch"),
+        (".tflite", "tflite"),
+    ):
+        if any(name.endswith(suffix) for name in files):
+            return fmt
+    # pytorch_model.bin is the older Hugging Face layout; a bare .bin is not
+    # enough on its own, since anything can be called that.
+    if any(name.startswith("pytorch_model") and name.endswith(".bin") for name in files):
+        return "pytorch"
     return None
 
 

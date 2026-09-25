@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.3
+
+- `push` recognises Hugging Face checkpoint layouts: sharded `*.safetensors`,
+  `pytorch_model.bin`, `.pt`/`.pth`/`.ckpt` and `.tflite` files all mark a
+  folder as a model, so a repository downloaded with `huggingface-cli` can be
+  published as it is.
+- A yes/no question is published as the `noul` capability, the field's own
+  word for it, rather than `classify`.
+
 ## 0.2.2
 
 - Uploads send the headers the registry's ticket says its signature covers

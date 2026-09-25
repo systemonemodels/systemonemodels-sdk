@@ -142,7 +142,7 @@ def test_all_publishes_every_model_with_variants_together(
     assert "onnx-int8/model.onnx" in snake["paths"]
     assert "coreml/model.mlpackage/Manifest.json" in snake["paths"]
     guard = registry.published[0]
-    assert guard["manifest"]["capabilities"] == ["classify"]
+    assert guard["manifest"]["capabilities"] == ["noul"]
     assert guard["readme"].startswith("# Guard")
 
 

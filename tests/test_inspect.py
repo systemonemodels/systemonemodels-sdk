@@ -182,9 +182,9 @@ def test_full_precision_is_not_worth_a_tag(workspace: Path) -> None:
     assert "float" not in found.tags
 
 
-def test_a_yes_no_question_is_a_classifier(workspace: Path) -> None:
+def test_a_yes_no_question_is_noul(workspace: Path) -> None:
     found = inspect(workspace / "runs" / "guard-0922-233445" / "model")
-    assert found.capabilities == ["classify"]
+    assert found.capabilities == ["noul"]
     assert found.readme is None
 
 

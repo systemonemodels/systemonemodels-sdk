@@ -70,3 +70,24 @@ def test_installed_packages_are_not_searched(tmp_path: Path) -> None:
     fixture.mkdir(parents=True)
     (fixture / "model.onnx").write_bytes(b"x")
     assert discover(tmp_path) == []
+
+
+def test_a_hugging_face_checkpoint_is_a_model(tmp_path: Path) -> None:
+    """Sharded safetensors, a config and a tokenizer: the usual HF layout."""
+    repo = tmp_path / "clm-8b"
+    repo.mkdir()
+    (repo / "model-00001-of-00002.safetensors").write_bytes(b"x")
+    (repo / "model-00002-of-00002.safetensors").write_bytes(b"x")
+    (repo / "config.json").write_text("{}")
+    [found] = discover(tmp_path)
+    assert (found.name, found.format) == ("clm-8b", "safetensors")
+
+
+def test_older_pytorch_checkpoints_count_too(tmp_path: Path) -> None:
+    (tmp_path / "old").mkdir()
+    (tmp_path / "old" / "pytorch_model.bin").write_bytes(b"x")
+    [found] = discover(tmp_path)
+    assert found.format == "pytorch"
+    (tmp_path / "junk").mkdir()
+    (tmp_path / "junk" / "data.bin").write_bytes(b"x")
+    assert len(discover(tmp_path)) == 1

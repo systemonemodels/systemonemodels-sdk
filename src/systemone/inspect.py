@@ -35,8 +35,9 @@ QUESTION_TYPE_TO_CAPABILITY = {
     "classify": "classify",
     "extract": "extract",
     "route": "route",
-    # Laya's yes/no question: the probability that the answer is yes.
-    "noul": "classify",
+    # A yes/no question answered with one probability: the field's third
+    # primitive, and the registry's word for it too.
+    "noul": "noul",
 }
 
 # The licences spec 0.1 accepts. Anything else is published as "other", with
@@ -72,6 +73,8 @@ FORMAT_FRAMEWORK = {
     "coreml": "coreml",
     "gguf": "gguf",
     "safetensors": "safetensors",
+    "pytorch": "pytorch",
+    "tflite": "tflite",
 }
 
 

@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from systemone import cli, studio
+from systemone import cli, hardware, studio
 
 runner = CliRunner()
 
@@ -123,10 +123,24 @@ def test_platform_gate(monkeypatch: pytest.MonkeyPatch) -> None:
     assert studio.supported_here() == (True, "")
 
 
+def fake_machine() -> hardware.Machine:
+    return hardware.Machine(
+        os="Linux",
+        os_version="Ubuntu 24.04",
+        arch="x86_64",
+        cpu="Test CPU",
+        cores=8,
+        memory_bytes=32 * 1024**3,
+        disk_free_bytes=100 * 1024**3,
+        gpus=[hardware.Gpu("nvidia", "RTX 4090", 24 * 1024**3, "560.1", "cuda 12.6")],
+    )
+
+
 def test_run_studio_refuses_unsupported_machines_without_force(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(studio, "supported_here", lambda: (False, "Not here yet."))
+    monkeypatch.setattr(cli.hardware, "detect", lambda *_: fake_machine())
     result = runner.invoke(cli.app, ["run", "studio", "--no-sign-in"])
     assert result.exit_code == 1
     assert "Not here yet." in plain(result.output) and "--force" in plain(result.output)
@@ -140,7 +154,8 @@ def test_run_studio_fetches_prepares_and_runs(
     monkeypatch.setattr(studio, "app_dir", lambda: tmp_path / "app")
     monkeypatch.setattr(studio, "fetch", lambda dest, update, log: "current")
     monkeypatch.setattr(studio, "prepare", lambda app, log: studio.Launch(["layastudio"], "uv"))
-    monkeypatch.setattr(studio, "run", lambda command: ran.append(list(command)) or 0)
+    monkeypatch.setattr(cli.hardware, "detect", lambda *_: fake_machine())
+    monkeypatch.setattr(studio, "run", lambda command, cwd=None: ran.append(list(command)) or 0)
     monkeypatch.setenv("LAYASTUDIO_HOME", str(tmp_path / "ws"))
     result = runner.invoke(
         cli.app,
@@ -148,6 +163,7 @@ def test_run_studio_fetches_prepares_and_runs(
     )
     assert result.exit_code == 0, result.output
     assert "Laya Studio up to date" in plain(result.output)
+    assert "RTX 4090" in plain(result.output) and "NVIDIA CUDA" in plain(result.output)
     assert ran == [["layastudio", "--no-browser", "--model", "aac6fef/laya-mlx"]]
 
 

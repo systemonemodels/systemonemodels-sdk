@@ -102,6 +102,13 @@ Files the registry already holds are never sent again, so republishing with one
 changed file sends one file, and large files stream from disk with a progress
 bar that moves by the byte.
 
+## What this machine can train on
+
+```bash
+systemone system          # OS, CPU, memory, GPUs and their driver stack, free disk
+systemone system --json   # the same, for scripts
+```
+
 ## Fine-tune locally with Laya Studio
 
 ```bash

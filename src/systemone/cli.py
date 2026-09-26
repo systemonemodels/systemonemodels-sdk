@@ -31,7 +31,7 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from systemone import __version__, config
+from systemone import __version__, config, hardware
 from systemone import cache as local_cache
 from systemone import studio as laya_studio
 from systemone.auth import can_open_browser, device_login
@@ -408,6 +408,38 @@ def create(
     console.print(f"[dim]{endpoint}/{repo}[/dim]")
 
 
+def _machine_table(machine: hardware.Machine) -> Table:
+    table = Table(show_header=False, box=None, pad_edge=False)
+    table.add_column(style="dim")
+    table.add_column()
+    table.add_row("System", f"{machine.os_version} ({machine.arch})")
+    table.add_row("CPU", f"{machine.cpu}, {machine.cores} cores")
+    table.add_row("Memory", human(machine.memory_bytes) if machine.memory_bytes else "unknown")
+    if not machine.gpus:
+        table.add_row("GPU", "none found")
+    for gpu in machine.gpus:
+        memory = f", {human(gpu.memory_bytes)}" if gpu.memory_bytes else ""
+        shared = " shared" if machine.unified_memory else ""
+        runtime = f" · {gpu.runtime}" if gpu.runtime else ""
+        table.add_row("GPU", f"{gpu.name}{memory}{shared}{runtime}")
+    table.add_row("Trains with", hardware.ACCELERATOR_LABEL[machine.accelerator])
+    if machine.disk_free_bytes is not None:
+        table.add_row("Free disk", human(machine.disk_free_bytes))
+    return table
+
+
+@app.command()
+def system(
+    json_output: Annotated[bool, typer.Option("--json", help="Print JSON, for scripts.")] = False,
+) -> None:
+    """What this machine can fine-tune on: OS, CPU, memory, GPUs and free disk."""
+    machine = hardware.detect()
+    if json_output:
+        console.print_json(data=machine.to_dict())
+        return
+    console.print(_machine_table(machine))
+
+
 run_app = typer.Typer(help="Run System One tools on this machine.", no_args_is_help=True)
 app.add_typer(run_app, name="run")
 
@@ -447,6 +479,12 @@ def run_studio(
     on later runs, sets up its Python environment and opens it in your browser.
     Anything after -- is passed to the studio, e.g. `-- --model aac6fef/laya-mlx`.
     """
+    machine = hardware.detect(
+        laya_studio.app_dir().parent if laya_studio.app_dir().parent.exists() else None
+    )
+    console.print("[bold]This machine[/bold]")
+    console.print(_machine_table(machine))
+    console.print()
     ok, why = laya_studio.supported_here()
     if not ok and not force:
         fail(f"{why} Pass --force to try anyway.")
@@ -479,7 +517,7 @@ def run_studio(
     console.print(f"Laya Studio {note} [dim]({app_path}, via {launch.how})[/dim]")
 
     args = laya_studio.studio_args(port=port, browser=browser, workspace=workspace, extra=ctx.args)
-    raise typer.Exit(laya_studio.run([*launch.command, *args]))
+    raise typer.Exit(laya_studio.run([*launch.command, *args], cwd=app_path))
 
 
 cache_app = typer.Typer(help="Inspect or clear the local download cache.", no_args_is_help=True)

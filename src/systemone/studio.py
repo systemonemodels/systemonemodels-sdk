@@ -183,11 +183,20 @@ class Launch:
     how: str
 
 
+def _works(python: str) -> bool:
+    """Whether an interpreter actually starts: a pyenv shim for a version that is
+    not installed is on PATH but fails the moment it runs."""
+    done = _run(
+        [python, "-c", "import sys; print(sys.version_info[:2] >= (3, 11))"], cwd=Path.home()
+    )
+    return done.returncode == 0 and done.stdout.strip() == "True"
+
+
 def _python_for_venv() -> str | None:
     if sys.version_info[:2] >= MIN_PYTHON:
         return sys.executable
     for name in ("python3.13", "python3.12", "python3.11"):
-        if found := shutil.which(name):
+        if (found := shutil.which(name)) and _works(found):
             return found
     return None
 
@@ -224,7 +233,7 @@ def prepare(app: Path, *, log: Log = print) -> Launch:
     wanted = hashlib.sha256((app / "pyproject.toml").read_bytes()).hexdigest()
     if not _venv_bin(venv, "python").exists():
         log("Creating Laya Studio's Python environment")
-        made = _run([python, "-m", "venv", str(venv)])
+        made = _run([python, "-m", "venv", str(venv)], cwd=app)
         if made.returncode != 0:
             raise RuntimeError(f"Could not create a virtual environment: {made.stderr.strip()}")
     if not stamp.exists() or stamp.read_text().strip() != wanted:
@@ -239,6 +248,7 @@ def prepare(app: Path, *, log: Log = print) -> Launch:
                 "-e",
                 f"{app}[systemone]",
             ],
+            cwd=app,
             check=False,
         )
         if pip.returncode != 0:
@@ -258,16 +268,19 @@ def studio_args(
     if not browser:
         args.append("--no-browser")
     if "--workspace" not in extra and not os.environ.get("LAYASTUDIO_HOME"):
-        args += ["--workspace", str((workspace or DEFAULT_WORKSPACE).expanduser())]
+        # Absolute: the studio runs from its own folder, not the caller's.
+        args += ["--workspace", str((workspace or DEFAULT_WORKSPACE).expanduser().resolve())]
     return args + list(extra)
 
 
-def run(command: Sequence[str]) -> int:
+def run(command: Sequence[str], cwd: Path | None = None) -> int:
     """Run the studio in the foreground; Ctrl+C reaches it, and its exit code is ours."""
     # The studio has its own environment. Whatever virtualenv this CLI was
     # installed into must not leak into it — uv would warn, pip would mix them.
     env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
-    process = subprocess.Popen(list(command), env=env)  # noqa: S603 - the studio's own launcher, no shell
+    # From the studio's own folder: a .python-version wherever the user happens
+    # to be would otherwise steer pyenv shims and uv to a different Python.
+    process = subprocess.Popen(list(command), env=env, cwd=cwd)  # noqa: S603 - no shell
     try:
         return process.wait()
     except KeyboardInterrupt:

@@ -6,7 +6,15 @@
   Python environment (uv when installed, a virtual environment otherwise) and
   starts it in the browser, offering to sign in first so the studio can
   publish. The source is unpacked with every path checked; datasets and runs
-  stay in `~/.layastudio/workspace`.
+  stay in `~/.layastudio/workspace`. Before starting it prints what the
+  machine can train on.
+- `systemone system` shows the OS, CPU, memory, every GPU with its memory and
+  driver stack (CUDA, ROCm, DirectML, Intel XPU, Apple Metal) and free disk;
+  `--json` for scripts. Standard library only, so it runs before any ML stack
+  is installed.
+- The studio and its tools run from the studio's own folder, so a
+  `.python-version` in the folder you happen to be in cannot send a pyenv shim
+  looking for a Python that is not installed.
 
 ## 0.2.3
 

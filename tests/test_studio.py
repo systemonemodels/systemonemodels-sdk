@@ -90,7 +90,7 @@ def test_studio_args(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_prepare_prefers_uv(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(studio.shutil, "which", lambda name: "/opt/uv" if name == "uv" else None)
+    monkeypatch.setattr(shutil, "which", lambda name: "/opt/uv" if name == "uv" else None)
     launch = studio.prepare(tmp_path, apple_silicon())
     assert launch.how == "uv"
     assert launch.command == [
@@ -107,7 +107,7 @@ def test_prepare_prefers_uv(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> 
 def test_prepare_without_a_new_enough_python_says_what_to_do(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(studio.shutil, "which", lambda name: None)
+    monkeypatch.setattr(shutil, "which", lambda name: None)
     monkeypatch.setattr(studio, "_python_for_venv", lambda: None)
     with pytest.raises(RuntimeError, match="Python 3.11"):
         studio.prepare(tmp_path, apple_silicon())
@@ -139,7 +139,7 @@ def test_only_intel_macs_are_left_out() -> None:
 def test_torch_machines_get_their_build(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     (tmp_path / "pyproject.toml").write_text("[project]\nname='layastudio'\n")
     calls: list[list[str]] = []
-    monkeypatch.setattr(studio.shutil, "which", lambda name: "/opt/uv" if name == "uv" else None)
+    monkeypatch.setattr(shutil, "which", lambda name: "/opt/uv" if name == "uv" else None)
 
     def fake_run(cmd, cwd=None):  # type: ignore[no-untyped-def]
         calls.append(list(cmd))
@@ -149,13 +149,14 @@ def test_torch_machines_get_their_build(monkeypatch: pytest.MonkeyPatch, tmp_pat
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
     monkeypatch.setattr(studio, "_run", fake_run)
-    monkeypatch.setattr(
-        studio.subprocess,
-        "run",
-        lambda cmd, cwd=None, check=False: (
-            calls.append(list(cmd)) or subprocess.CompletedProcess(cmd, 0)
-        ),
-    )
+
+    def fake_install(
+        cmd: list[str], cwd: Path | None = None, check: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        calls.append(list(cmd))
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(subprocess, "run", fake_install)
     rtx = hardware.Machine(
         "Linux",
         "Ubuntu",
@@ -194,7 +195,7 @@ def test_run_studio_refuses_unsupported_machines_without_force(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(studio, "supported_here", lambda machine=None: (False, "Not here yet."))
-    monkeypatch.setattr(cli.hardware, "detect", lambda *_: fake_machine())
+    monkeypatch.setattr(hardware, "detect", lambda *_: fake_machine())
     result = runner.invoke(cli.app, ["run", "studio", "--no-sign-in"])
     assert result.exit_code == 1
     assert "Not here yet." in plain(result.output) and "--force" in plain(result.output)
@@ -210,8 +211,13 @@ def test_run_studio_fetches_prepares_and_runs(
     monkeypatch.setattr(
         studio, "prepare", lambda app, machine, log: studio.Launch(["layastudio"], "uv")
     )
-    monkeypatch.setattr(cli.hardware, "detect", lambda *_: fake_machine())
-    monkeypatch.setattr(studio, "run", lambda command, cwd=None: ran.append(list(command)) or 0)
+    monkeypatch.setattr(hardware, "detect", lambda *_: fake_machine())
+
+    def fake_run(command: list[str], cwd: Path | None = None) -> int:
+        ran.append(list(command))
+        return 0
+
+    monkeypatch.setattr(studio, "run", fake_run)
     monkeypatch.setenv("LAYASTUDIO_HOME", str(tmp_path / "ws"))
     result = runner.invoke(
         cli.app,

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- `systemone run studio` fetches Laya Studio, keeps it up to date, sets up its
+  Python environment (uv when installed, a virtual environment otherwise) and
+  starts it in the browser, offering to sign in first so the studio can
+  publish. The source is unpacked with every path checked; datasets and runs
+  stay in `~/.layastudio/workspace`.
+
 ## 0.2.3
 
 - `push` recognises Hugging Face checkpoint layouts: sharded `*.safetensors`,

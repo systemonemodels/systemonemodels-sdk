@@ -102,6 +102,25 @@ Files the registry already holds are never sent again, so republishing with one
 changed file sends one file, and large files stream from disk with a progress
 bar that moves by the byte.
 
+## Fine-tune locally with Laya Studio
+
+```bash
+systemone run studio
+```
+
+Fetches [Laya Studio](https://github.com/biplovgautam/LayaStudio) the first time,
+updates it on later runs, gives it its own Python environment (through
+[uv](https://docs.astral.sh/uv/) when it is installed, otherwise a virtual
+environment on Python 3.11+) and opens it in your browser. It offers to sign you
+in first, so the studio's Publish button can push a finished run to the registry.
+Your datasets and runs stay in `~/.layastudio/workspace`; the code lives in the
+platform's data folder and can be deleted at any time.
+
+`--port`, `--no-browser`, `--no-update` and `--workspace` do what they say, and
+anything after `--` goes to the studio: `systemone run studio -- --model
+aac6fef/laya-mlx`. Laya Studio runs on Apple silicon Macs today; Windows, Linux
+and NVIDIA/AMD support is being built (`--force` tries anyway).
+
 ## In Python
 
 ```python

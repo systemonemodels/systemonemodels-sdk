@@ -6,6 +6,7 @@ systemone show biplov/snake-balanced-multilingual
 systemone pull biplov/snake-balanced-multilingual --variant onnx-int8
 systemone push                       # find the models here and choose
 systemone push ./runs/my-run/model --repo me/my-model
+systemone run studio                 # fine-tune locally in Laya Studio
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ from rich.table import Table
 
 from systemone import __version__, config
 from systemone import cache as local_cache
+from systemone import studio as laya_studio
 from systemone.auth import can_open_browser, device_login
 from systemone.client import Client
 from systemone.discover import Candidate, describe, discover, next_version, parse_selection
@@ -404,6 +406,80 @@ def create(
     endpoint = config.web_url(config.load().endpoint)
     console.print(f"Created [bold]{repo}[/bold]{' (private)' if private else ''}")
     console.print(f"[dim]{endpoint}/{repo}[/dim]")
+
+
+run_app = typer.Typer(help="Run System One tools on this machine.", no_args_is_help=True)
+app.add_typer(run_app, name="run")
+
+
+@run_app.command(
+    "studio",
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
+def run_studio(
+    ctx: typer.Context,
+    port: Annotated[
+        int | None, typer.Option(help="Port to serve on (default 8765, or the next free).")
+    ] = None,
+    browser: Annotated[
+        bool, typer.Option("--browser/--no-browser", help="Open the studio in a browser tab.")
+    ] = True,
+    update: Annotated[
+        bool, typer.Option("--update/--no-update", help="Fetch the latest Laya Studio first.")
+    ] = True,
+    workspace: Annotated[
+        Path | None,
+        typer.Option(help="Datasets, runs and checkpoints (default ~/.layastudio/workspace)."),
+    ] = None,
+    force: Annotated[
+        bool, typer.Option("--force", help="Start even where Laya Studio is not supported yet.")
+    ] = False,
+    sign_in: Annotated[
+        bool,
+        typer.Option(
+            "--sign-in/--no-sign-in", help="Offer to sign in first, so the studio can publish."
+        ),
+    ] = True,
+) -> None:
+    """Fine-tune models locally in Laya Studio, then publish them here in one click.
+
+    Fetches Laya Studio (a separate open-source app) the first time, updates it
+    on later runs, sets up its Python environment and opens it in your browser.
+    Anything after -- is passed to the studio, e.g. `-- --model aac6fef/laya-mlx`.
+    """
+    ok, why = laya_studio.supported_here()
+    if not ok and not force:
+        fail(f"{why} Pass --force to try anyway.")
+
+    current = config.load()
+    signed_in = bool(current.token or os.environ.get(config.ENV_TOKEN))
+    if sign_in and not signed_in and _interactive():
+        console.print("The studio publishes to System One Models with your login.")
+        if typer.confirm("Sign in now?", default=True):
+            login(token=None, paste=False, browser=True, endpoint=None)
+        else:
+            console.print(
+                "[dim]Skipped. Publish will ask you to run `systemone login` first.[/dim]"
+            )
+
+    app_path = laya_studio.app_dir()
+    try:
+        state = laya_studio.fetch(
+            app_path, update=update, log=lambda m: console.print(f"[dim]{m}[/dim]")
+        )
+        launch = laya_studio.prepare(app_path, log=lambda m: console.print(f"[dim]{m}[/dim]"))
+    except (RuntimeError, OSError) as exc:
+        fail(str(exc))
+    note = {
+        "installed": "installed",
+        "updated": "updated",
+        "current": "up to date",
+        "kept": "not updated",
+    }[state]
+    console.print(f"Laya Studio {note} [dim]({app_path}, via {launch.how})[/dim]")
+
+    args = laya_studio.studio_args(port=port, browser=browser, workspace=workspace, extra=ctx.args)
+    raise typer.Exit(laya_studio.run([*launch.command, *args]))
 
 
 cache_app = typer.Typer(help="Inspect or clear the local download cache.", no_args_is_help=True)

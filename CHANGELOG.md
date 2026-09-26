@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.4
 
 - `systemone run studio` fetches Laya Studio, keeps it up to date, sets up its
   Python environment (uv when installed, a virtual environment otherwise) and

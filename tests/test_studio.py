@@ -91,7 +91,7 @@ def test_studio_args(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_prepare_prefers_uv(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(studio.shutil, "which", lambda name: "/opt/uv" if name == "uv" else None)
-    launch = studio.prepare(tmp_path)
+    launch = studio.prepare(tmp_path, apple_silicon())
     assert launch.how == "uv"
     assert launch.command == [
         "/opt/uv",
@@ -110,17 +110,71 @@ def test_prepare_without_a_new_enough_python_says_what_to_do(
     monkeypatch.setattr(studio.shutil, "which", lambda name: None)
     monkeypatch.setattr(studio, "_python_for_venv", lambda: None)
     with pytest.raises(RuntimeError, match="Python 3.11"):
-        studio.prepare(tmp_path)
+        studio.prepare(tmp_path, apple_silicon())
 
 
-def test_platform_gate(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(studio.platform, "system", lambda: "Linux")
-    monkeypatch.setattr(studio.platform, "machine", lambda: "x86_64")
-    ok, why = studio.supported_here()
-    assert not ok and "Linux" in why
-    monkeypatch.setattr(studio.platform, "system", lambda: "Darwin")
-    monkeypatch.setattr(studio.platform, "machine", lambda: "arm64")
-    assert studio.supported_here() == (True, "")
+def apple_silicon() -> hardware.Machine:
+    return hardware.Machine(
+        "Darwin",
+        "macOS 26",
+        "arm64",
+        "Apple M4",
+        10,
+        16 * 1024**3,
+        None,
+        [hardware.Gpu("apple", "Apple M4", 16 * 1024**3)],
+        True,
+    )
+
+
+def test_only_intel_macs_are_left_out() -> None:
+    intel_mac = hardware.Machine("Darwin", "macOS 14", "x86_64", "Intel", 8, 16 * 1024**3, None, [])
+    ok, why = studio.supported_here(intel_mac)
+    assert not ok and "Intel Macs" in why
+    assert studio.supported_here(apple_silicon()) == (True, "")
+    windows_cpu = hardware.Machine("Windows", "11", "AMD64", "x", 8, 16 * 1024**3, None, [])
+    assert studio.supported_here(windows_cpu) == (True, "")
+
+
+def test_torch_machines_get_their_build(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='layastudio'\n")
+    calls: list[list[str]] = []
+    monkeypatch.setattr(studio.shutil, "which", lambda name: "/opt/uv" if name == "uv" else None)
+
+    def fake_run(cmd, cwd=None):  # type: ignore[no-untyped-def]
+        calls.append(list(cmd))
+        venv_python = studio._venv_bin(tmp_path / ".venv", "python")
+        venv_python.parent.mkdir(parents=True, exist_ok=True)
+        venv_python.touch()
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(studio, "_run", fake_run)
+    monkeypatch.setattr(
+        studio.subprocess,
+        "run",
+        lambda cmd, cwd=None, check=False: (
+            calls.append(list(cmd)) or subprocess.CompletedProcess(cmd, 0)
+        ),
+    )
+    rtx = hardware.Machine(
+        "Linux",
+        "Ubuntu",
+        "x86_64",
+        "x",
+        16,
+        64 * 1024**3,
+        None,
+        [hardware.Gpu("nvidia", "RTX 4090", 24 * 1024**3, "580.1", arch="8.9")],
+    )
+    launch = studio.prepare(tmp_path, rtx, log=lambda _: None)
+    assert launch.how == "PyTorch cu130"
+    assert ["/opt/uv", "venv", "--python", "3.12", str(tmp_path / ".venv")] in calls
+    install = next(c for c in calls if "pip" in c)
+    assert install[install.index("--torch-backend") + 1] == "cu130"
+    assert install[-1].endswith("[torch,systemone]")
+    calls.clear()
+    studio.prepare(tmp_path, rtx, log=lambda _: None)
+    assert not any("pip" in c for c in calls)  # nothing changed: no reinstall
 
 
 def fake_machine() -> hardware.Machine:
@@ -139,7 +193,7 @@ def fake_machine() -> hardware.Machine:
 def test_run_studio_refuses_unsupported_machines_without_force(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(studio, "supported_here", lambda: (False, "Not here yet."))
+    monkeypatch.setattr(studio, "supported_here", lambda machine=None: (False, "Not here yet."))
     monkeypatch.setattr(cli.hardware, "detect", lambda *_: fake_machine())
     result = runner.invoke(cli.app, ["run", "studio", "--no-sign-in"])
     assert result.exit_code == 1
@@ -150,10 +204,12 @@ def test_run_studio_fetches_prepares_and_runs(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     ran: list[list[str]] = []
-    monkeypatch.setattr(studio, "supported_here", lambda: (True, ""))
+    monkeypatch.setattr(studio, "supported_here", lambda machine=None: (True, ""))
     monkeypatch.setattr(studio, "app_dir", lambda: tmp_path / "app")
     monkeypatch.setattr(studio, "fetch", lambda dest, update, log: "current")
-    monkeypatch.setattr(studio, "prepare", lambda app, log: studio.Launch(["layastudio"], "uv"))
+    monkeypatch.setattr(
+        studio, "prepare", lambda app, machine, log: studio.Launch(["layastudio"], "uv")
+    )
     monkeypatch.setattr(cli.hardware, "detect", lambda *_: fake_machine())
     monkeypatch.setattr(studio, "run", lambda command, cwd=None: ran.append(list(command)) or 0)
     monkeypatch.setenv("LAYASTUDIO_HOME", str(tmp_path / "ws"))

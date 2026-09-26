@@ -472,6 +472,12 @@ def run_studio(
             "--sign-in/--no-sign-in", help="Offer to sign in first, so the studio can publish."
         ),
     ] = True,
+    source: Annotated[
+        Path | None,
+        typer.Option(
+            help="Run this Laya Studio checkout instead of the managed copy (development)."
+        ),
+    ] = None,
 ) -> None:
     """Fine-tune models locally in Laya Studio, then publish them here in one click.
 
@@ -485,7 +491,7 @@ def run_studio(
     console.print("[bold]This machine[/bold]")
     console.print(_machine_table(machine))
     console.print()
-    ok, why = laya_studio.supported_here()
+    ok, why = laya_studio.supported_here(machine)
     if not ok and not force:
         fail(f"{why} Pass --force to try anyway.")
 
@@ -500,12 +506,16 @@ def run_studio(
                 "[dim]Skipped. Publish will ask you to run `systemone login` first.[/dim]"
             )
 
-    app_path = laya_studio.app_dir()
+    app_path = source.expanduser().resolve() if source else laya_studio.app_dir()
+    if source and not (app_path / "pyproject.toml").exists():
+        fail(f"{app_path} is not a Laya Studio checkout.")
+
+    def say(message: str) -> None:
+        console.print(f"[dim]{message}[/dim]")
+
     try:
-        state = laya_studio.fetch(
-            app_path, update=update, log=lambda m: console.print(f"[dim]{m}[/dim]")
-        )
-        launch = laya_studio.prepare(app_path, log=lambda m: console.print(f"[dim]{m}[/dim]"))
+        state = "local" if source else laya_studio.fetch(app_path, update=update, log=say)
+        launch = laya_studio.prepare(app_path, machine, log=say)
     except (RuntimeError, OSError) as exc:
         fail(str(exc))
     note = {
@@ -513,10 +523,13 @@ def run_studio(
         "updated": "updated",
         "current": "up to date",
         "kept": "not updated",
+        "local": "from your checkout",
     }[state]
     console.print(f"Laya Studio {note} [dim]({app_path}, via {launch.how})[/dim]")
 
-    args = laya_studio.studio_args(port=port, browser=browser, workspace=workspace, extra=ctx.args)
+    args = laya_studio.studio_args(
+        port=port, browser=browser, workspace=workspace, extra=ctx.args, managed=source is None
+    )
     raise typer.Exit(laya_studio.run([*launch.command, *args], cwd=app_path))
 
 

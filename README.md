@@ -125,8 +125,11 @@ platform's data folder and can be deleted at any time.
 
 `--port`, `--no-browser`, `--no-update` and `--workspace` do what they say, and
 anything after `--` goes to the studio: `systemone run studio -- --model
-aac6fef/laya-mlx`. Laya Studio runs on Apple silicon Macs today; Windows, Linux
-and NVIDIA/AMD support is being built (`--force` tries anyway).
+aac6fef/laya-mlx`. It runs on Apple silicon (MLX), and on Windows and Linux with
+the PyTorch build for the machine's GPU — NVIDIA (CUDA 13 or 12.6), AMD (ROCm on
+Linux; RX 7000 and 9000 on Windows), Intel Arc (XPU) — or the CPU. `systemone
+system` shows what it found. `--source DIR` runs a Laya Studio checkout instead of
+the managed copy.
 
 ## In Python
 

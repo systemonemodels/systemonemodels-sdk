@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import platform
 import shutil
 import subprocess
 import sys
@@ -29,6 +28,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from systemone import hardware
 from systemone.config import APP_NAME
 
 STUDIO_REPO = "https://github.com/biplovgautam/LayaStudio"
@@ -57,17 +57,16 @@ def app_dir() -> Path:
     return data_dir() / "studio" / "app"
 
 
-def supported_here() -> tuple[bool, str]:
-    """Whether Laya Studio runs on this machine today, and why not."""
-    system, machine = platform.system(), platform.machine().lower()
-    if system == "Darwin" and machine in ("arm64", "aarch64"):
-        return True, ""
-    where = {"Darwin": "an Intel Mac", "Windows": "Windows", "Linux": "Linux"}.get(system, system)
-    return (
-        False,
-        f"Laya Studio runs on Apple silicon Macs today; {where} support, with NVIDIA and AMD "
-        "GPUs, is being built.",
-    )
+def supported_here(machine: hardware.Machine | None = None) -> tuple[bool, str]:
+    """Whether Laya Studio can train on this machine, and why not.
+
+    Apple silicon trains on MLX; Windows and Linux on PyTorch — NVIDIA, AMD, Intel Arc or
+    the CPU. Only Intel Macs are left out: neither current PyTorch nor MLX builds for them.
+    """
+    build = (machine or hardware.detect()).torch_build
+    if build.backend == "unsupported":
+        return False, build.reason
+    return True, ""
 
 
 # --- fetching ---------------------------------------------------------------
@@ -209,15 +208,22 @@ def _venv_bin(venv: Path, name: str) -> Path:
     )
 
 
-def prepare(app: Path, *, log: Log = print) -> Launch:
+def prepare(app: Path, machine: hardware.Machine | None = None, *, log: Log = print) -> Launch:
     """The command that runs the studio in its own environment, creating it if needed.
 
-    uv, when it is installed, does everything: it picks or downloads a suitable
-    Python and keeps the environment in step with the studio's lock file.
-    Otherwise a virtual environment is made with the first Python 3.11+ found,
-    and reinstalled only when the studio's dependencies change.
+    On Apple silicon, uv runs the studio against its lock file (MLX). Everywhere else the
+    studio gets its own virtual environment with the PyTorch build this machine needs —
+    CUDA 13 or 12.6, ROCm, Intel XPU or CPU — from PyTorch's (or AMD's) index, reinstalled
+    only when the build or the studio's dependencies change. Without uv, a virtual
+    environment is made with the first Python 3.11+ found.
     """
-    if uv := shutil.which("uv"):
+    build = (machine or hardware.detect()).torch_build
+    if build.backend == "unsupported":
+        raise RuntimeError(build.reason)
+    uv = shutil.which("uv")
+    if build.backend != "pypi":
+        return _prepare_torch(app, build, uv, log)
+    if uv:
         return Launch(
             [uv, "run", "--project", str(app), "--extra", "systemone", "layastudio"], "uv"
         )
@@ -259,17 +265,87 @@ def prepare(app: Path, *, log: Log = print) -> Launch:
     return Launch([str(_venv_bin(venv, "layastudio"))], "venv")
 
 
+def _prepare_torch(app: Path, build: hardware.TorchBuild, uv: str | None, log: Log) -> Launch:
+    venv = app / ".venv"
+    python = _venv_bin(venv, "python")
+    stamp = venv / ".systemone-deps"
+    wanted = hashlib.sha256(
+        (app / "pyproject.toml").read_bytes() + f"{build.backend}|{build.requirement}".encode()
+    ).hexdigest()
+    log(f"PyTorch for this machine: {build.reason}")
+    if not python.exists():
+        log("Creating Laya Studio's Python environment")
+        if uv:
+            made = _run([uv, "venv", "--python", "3.12", str(venv)], cwd=app)
+        else:
+            base = _python_for_venv()
+            if base is None:
+                raise RuntimeError(
+                    "Laya Studio needs Python 3.11 or newer. Install uv "
+                    "(https://docs.astral.sh/uv/), which fetches one for you, or install "
+                    "Python 3.11+, then run this again."
+                )
+            made = _run([base, "-m", "venv", str(venv)], cwd=app)
+        if made.returncode != 0:
+            raise RuntimeError(f"Could not create a virtual environment: {made.stderr.strip()}")
+    launch = Launch([str(_venv_bin(venv, "layastudio"))], f"PyTorch {build.backend}")
+    if stamp.exists() and stamp.read_text().strip() == wanted:
+        return launch
+
+    log("Installing PyTorch and Laya Studio (the first time downloads a few GB)")
+    target = f"{app}[torch,systemone]"
+    if uv:
+        pip = [uv, "pip", "install", "--python", str(python)]
+        if build.backend == "amd-windows":
+            steps = [
+                [
+                    *pip,
+                    "--index-url",
+                    str(build.index_url),
+                    "--index-strategy",
+                    "unsafe-best-match",
+                    build.requirement,
+                ],
+                [*pip, "-e", target],
+            ]
+        else:
+            steps = [[*pip, "--torch-backend", build.backend, "-e", target]]
+    else:
+        pip = [str(python), "-m", "pip", "install"]
+        steps = [
+            [*pip, "--index-url", str(build.index_url), build.requirement or "torch"],
+            [*pip, "-e", target],
+        ]
+    for step in steps:
+        done = subprocess.run(step, cwd=app, check=False)  # noqa: S603 - installers, no shell
+        if done.returncode != 0:
+            raise RuntimeError(
+                "Installing Laya Studio's dependencies failed; see the output above."
+            )
+    stamp.write_text(wanted)
+    return launch
+
+
 def studio_args(
-    *, port: int | None, browser: bool, workspace: Path | None, extra: Sequence[str]
+    *,
+    port: int | None,
+    browser: bool,
+    workspace: Path | None,
+    extra: Sequence[str],
+    managed: bool = True,
 ) -> list[str]:
     args: list[str] = []
     if port:
         args += ["--port", str(port)]
     if not browser:
         args.append("--no-browser")
-    if "--workspace" not in extra and not os.environ.get("LAYASTUDIO_HOME"):
+    # A checkout run with --source keeps its own workspace beside the code, where its
+    # runs already are; the managed copy keeps data outside the code it replaces.
+    if workspace is not None:
+        args += ["--workspace", str(workspace.expanduser().resolve())]
+    elif managed and "--workspace" not in extra and not os.environ.get("LAYASTUDIO_HOME"):
         # Absolute: the studio runs from its own folder, not the caller's.
-        args += ["--workspace", str((workspace or DEFAULT_WORKSPACE).expanduser().resolve())]
+        args += ["--workspace", str(DEFAULT_WORKSPACE.expanduser().resolve())]
     return args + list(extra)
 
 

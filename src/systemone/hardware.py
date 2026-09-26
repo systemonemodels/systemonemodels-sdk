@@ -7,7 +7,8 @@ than failing the command.
 
     >>> from systemone.hardware import detect
     >>> machine = detect()
-    >>> machine.accelerator            # "cuda", "rocm", "xpu", "mlx", "directml" or "cpu"
+    >>> machine.accelerator            # "cuda", "rocm", "xpu", "mlx" or "cpu"
+    >>> machine.torch_build.backend    # the PyTorch wheels to install: "cu130", "rocm7.2", ...
 """
 
 from __future__ import annotations
@@ -31,8 +32,50 @@ class Gpu:
     name: str
     memory_bytes: int | None = None
     driver: str | None = None
-    # The software stack that can drive it: "cuda 12.4", "rocm 6.2", "metal", "xpu", "directml".
+    # The software stack that can drive it: "cuda 12.6", "rocm", "metal", "xpu".
     runtime: str | None = None
+    # NVIDIA compute capability ("8.6"); AMD graphics target ("gfx1100").
+    arch: str | None = None
+
+
+# AMD cards with PyTorch wheels on Windows (ROCm 10, AMD's whl-next index), by graphics target.
+AMD_WINDOWS = {
+    "gfx1201": ("rx 9070", "r9700", "r9600"),
+    "gfx1200": ("rx 9060", "rx 9050"),
+    "gfx1100": ("rx 7900", "w7900", "w7800"),
+    "gfx1101": ("rx 7800", "rx 7700"),
+    "gfx1102": ("rx 7600",),
+}
+AMD_WINDOWS_INDEX = "https://stable.repo.amd.com/rocm/whl-next/"
+PYTORCH_INDEX = "https://download.pytorch.org/whl/"
+
+
+def amd_windows_target(name: str) -> str | None:
+    lower = name.lower()
+    for target, markers in AMD_WINDOWS.items():
+        if any(marker in lower for marker in markers):
+            return target
+    return None
+
+
+def _version_major(text: str | None) -> int:
+    match = re.match(r"(\d+)", text or "")
+    return int(match.group(1)) if match else 0
+
+
+@dataclass
+class TorchBuild:
+    """Which PyTorch wheels to install here, and why.
+
+    `backend` is a uv --torch-backend value (cu130, cu126, rocm7.2, xpu, cpu),
+    "pypi" (the default wheel: Metal on a Mac), "amd-windows" (AMD's own index)
+    or "unsupported".
+    """
+
+    backend: str
+    index_url: str | None
+    requirement: str
+    reason: str
 
 
 @dataclass
@@ -50,17 +93,91 @@ class Machine:
 
     @property
     def accelerator(self) -> str:
-        """The backend training should use here, best first."""
-        vendors = {g.vendor for g in self.gpus}
-        if "nvidia" in vendors:
-            return "cuda"
-        if "apple" in vendors:
+        """What training runs on here: cuda, rocm, xpu, mlx or cpu."""
+        if any(g.vendor == "apple" for g in self.gpus):
             return "mlx"
-        if "amd" in vendors:
-            return "rocm" if self.os == "Linux" else "directml"
-        if "intel" in vendors and any((g.memory_bytes or 0) >= 4 * 1024**3 for g in self.gpus):
+        build = self.torch_build.backend
+        if build.startswith("cu"):
+            return "cuda"
+        if build.startswith("rocm") or build == "amd-windows":
+            return "rocm"
+        if build == "xpu":
             return "xpu"
         return "cpu"
+
+    @property
+    def torch_build(self) -> TorchBuild:
+        """The PyTorch build for this machine, decided without importing torch.
+
+        Chosen here rather than by uv's --torch-backend=auto, which cannot tell a
+        Pascal card that CUDA 13 dropped from one it supports, never finds AMD on
+        Windows, and picks Intel's XPU wheels for any Intel display adapter.
+        """
+        nvidia = [g for g in self.gpus if g.vendor == "nvidia"]
+        amd = [g for g in self.gpus if g.vendor == "amd"]
+        intel = [g for g in self.gpus if g.vendor == "intel"]
+        if self.os == "Darwin":
+            if self.arch.lower() in ("arm64", "aarch64"):
+                return TorchBuild(
+                    "pypi", None, "torch>=2.4", "Apple silicon: MLX trains, PyTorch uses Metal."
+                )
+            return TorchBuild(
+                "unsupported", None, "", "Intel Macs have no current PyTorch or MLX build."
+            )
+        if nvidia:
+            best = max(nvidia, key=lambda g: g.memory_bytes or 0)
+            driver = _version_major(best.driver)
+            arch = best.arch or ""
+            capability = float(arch) if re.fullmatch(r"\d+(\.\d+)?", arch) else None
+            if driver and driver < 525:
+                return TorchBuild(
+                    "cpu",
+                    PYTORCH_INDEX + "cpu",
+                    "torch>=2.4",
+                    f"NVIDIA driver {best.driver} is too old for CUDA 12; update it to train on "
+                    f"{best.name}. Using the CPU until then.",
+                )
+            if capability is not None and capability >= 7.5 and driver >= 580:
+                return TorchBuild(
+                    "cu130", PYTORCH_INDEX + "cu130", "torch>=2.4", f"{best.name}: CUDA 13."
+                )
+            older = capability is not None and capability < 7.5
+            return TorchBuild(
+                "cu126",
+                PYTORCH_INDEX + "cu126",
+                "torch>=2.4,<2.15",
+                f"{best.name}: CUDA 12.6"
+                + (" (CUDA 13 dropped cards older than Turing)." if older else "."),
+            )
+        if amd and self.os == "Linux":
+            return TorchBuild(
+                "rocm7.2", PYTORCH_INDEX + "rocm7.2", "torch>=2.4", f"{amd[0].name}: ROCm 7.2."
+            )
+        if amd and self.os == "Windows":
+            for gpu in amd:
+                if target := amd_windows_target(gpu.name):
+                    gpu.arch = target
+                    return TorchBuild(
+                        "amd-windows",
+                        AMD_WINDOWS_INDEX,
+                        f"torch[device-{target}]==2.13.0+rocm10.0.0",
+                        f"{gpu.name}: AMD ROCm 10 for Windows ({target}).",
+                    )
+            return TorchBuild(
+                "cpu",
+                PYTORCH_INDEX + "cpu",
+                "torch>=2.4",
+                f"{amd[0].name} has no PyTorch build on Windows (AMD's covers the RX 7000 and "
+                "9000 series), so training uses the CPU.",
+            )
+        if any("arc" in g.name.lower() or "data center gpu max" in g.name.lower() for g in intel):
+            return TorchBuild("xpu", PYTORCH_INDEX + "xpu", "torch>=2.4", "Intel Arc: XPU.")
+        return TorchBuild(
+            "cpu",
+            PYTORCH_INDEX + "cpu",
+            "torch>=2.4",
+            "No supported GPU, so training uses the CPU.",
+        )
 
     @property
     def training_memory_bytes(self) -> int | None:
@@ -70,6 +187,10 @@ class Machine:
         """
         if self.unified_memory or not self.gpus or self.accelerator == "cpu":
             return self.memory_bytes
+        vendor = {"cuda": "nvidia", "rocm": "amd", "xpu": "intel"}.get(self.accelerator)
+        chosen = [g.memory_bytes for g in self.gpus if g.vendor == vendor and g.memory_bytes]
+        if chosen:
+            return max(chosen)
         sizes = [g.memory_bytes for g in self.gpus if g.memory_bytes]
         return max(sizes) if sizes else None
 
@@ -77,6 +198,7 @@ class Machine:
         data = asdict(self)
         data["accelerator"] = self.accelerator
         data["training_memory_bytes"] = self.training_memory_bytes
+        data["torch_build"] = asdict(self.torch_build)
         return data
 
 
@@ -174,13 +296,10 @@ def _os_version() -> str:
 
 
 def _nvidia() -> list[Gpu]:
-    out = _run(
-        [
-            "nvidia-smi",
-            "--query-gpu=name,memory.total,driver_version",
-            "--format=csv,noheader,nounits",
-        ]
-    )
+    query = ["nvidia-smi", "--format=csv,noheader,nounits"]
+    out = _run([*query, "--query-gpu=name,memory.total,driver_version,compute_cap"])
+    if not out:  # drivers too old to report compute_cap
+        out = _run([*query, "--query-gpu=name,memory.total,driver_version"])
     if not out:
         return []
     header = _run(["nvidia-smi"]) or ""
@@ -191,6 +310,7 @@ def _nvidia() -> list[Gpu]:
         if len(parts) < 3:
             continue
         name, mib, driver = parts[0], parts[1], parts[2]
+        arch = parts[3] if len(parts) > 3 and re.fullmatch(r"[\d.]+", parts[3]) else None
         gpus.append(
             Gpu(
                 "nvidia",
@@ -198,6 +318,7 @@ def _nvidia() -> list[Gpu]:
                 int(float(mib)) * 1024**2 if re.fullmatch(r"[\d.]+", mib) else None,
                 driver,
                 f"cuda {cuda.group(1)}" if cuda else "cuda",
+                arch,
             )
         )
     return gpus
@@ -297,7 +418,6 @@ def _windows() -> list[Gpu]:
                 name,
                 int(memory) if isinstance(memory, int) else None,
                 row.get("Driver"),
-                "directml",
             )
         )
     return gpus
@@ -357,7 +477,6 @@ def detect(workdir: Path | None = None) -> Machine:
 ACCELERATOR_LABEL = {
     "cuda": "NVIDIA CUDA",
     "rocm": "AMD ROCm",
-    "directml": "DirectML (AMD or Intel on Windows)",
     "xpu": "Intel XPU",
     "mlx": "Apple MLX (Metal)",
     "cpu": "CPU only",

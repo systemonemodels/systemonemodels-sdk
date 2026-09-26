@@ -8,6 +8,13 @@
   publish. The source is unpacked with every path checked; datasets and runs
   stay in `~/.layastudio/workspace`. Before starting it prints what the
   machine can train on.
+- `run studio` works on Windows and Linux too. It installs the PyTorch build the
+  machine needs, chosen from its own detection rather than uv's guess: CUDA 13
+  for Turing and newer NVIDIA cards on driver 580+, CUDA 12.6 for older cards or
+  drivers, ROCm 7.2 for AMD on Linux, AMD's ROCm 10 wheels for RX 7000/9000 on
+  Windows, XPU for Intel Arc, and the CPU otherwise. Only Intel Macs are left
+  out, since neither PyTorch nor MLX builds for them any more. `--source DIR`
+  runs a Laya Studio checkout instead of the managed copy.
 - `systemone system` shows the OS, CPU, memory, every GPU with its memory and
   driver stack (CUDA, ROCm, DirectML, Intel XPU, Apple Metal) and free disk;
   `--json` for scripts. Standard library only, so it runs before any ML stack

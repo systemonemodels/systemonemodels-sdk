@@ -180,7 +180,7 @@ Issues and pull requests are welcome. For anything security-related, see
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
 - Every System One model, compared: <https://systemonemodels.tech/system-one-models>
 - Laya Studio: <https://github.com/biplovgautam/LayaStudio>
-- System One Models on [LinkedIn](https://www.linkedin.com/company/system-one-models/), [Hugging Face](https://huggingface.co/systemonemodels) and [Instagram](https://www.instagram.com/systemonemodels.tech/)
+- System One Models on [LinkedIn](https://www.linkedin.com/company/system-one-models/), [X](https://x.com/SystemoneModels), [Hugging Face](https://huggingface.co/systemonemodels) and [Instagram](https://www.instagram.com/systemonemodels.tech/)
 - Contact: ceo@systemonemodels.tech
 
 Licensed under [Apache-2.0](LICENSE).

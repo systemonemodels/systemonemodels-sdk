@@ -139,8 +139,12 @@ def pull_version(
     version: str | None = None,
     variant: str | None = None,
     on_progress: Callable[[str, int, int, bool], None] | None = None,
+    select: Callable[[list[str]], set[str]] | None = None,
 ) -> PullResult:
     """Materialise a version on disk, through the local cache.
+
+    `select` narrows the version to the paths it returns, given every path in
+    it: one checkpoint of several, say.
 
     Every file with a known digest is served from the blob cache when it is
     already there and intact, and downloaded into the cache when it is not.
@@ -176,6 +180,10 @@ def pull_version(
             raise SystemOneError(
                 f"no files under '{variant}'. Available: {', '.join(folders) or 'none'}"
             )
+
+    if select is not None:
+        keep = select([a.get("path") or a["filename"] for a in artifacts])
+        artifacts = [a for a in artifacts if (a.get("path") or a["filename"]) in keep]
 
     snapshot = cache.snapshot_root(repo, wanted)
     result = PullResult(root=snapshot, files=len(artifacts))

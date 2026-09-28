@@ -84,7 +84,7 @@ What gets published, without retyping any of it:
   without one gets a card written from its evaluation, questions and variants.
 - **The manifest.** `systemone.yaml` — what the model decides, its runtime, and
   its evaluation: accuracy, calibration error and latency from a
-  [Laya Studio](https://layastudio.biplovgautam.com.np/) run's `eval.json`, or
+  [System One Studio](https://layastudio.biplovgautam.com.np/) run's `eval.json`, or
   an export's own measurements. A base model that came from Hugging Face is
   recorded as such, so the model page links to it. Pass `--manifest` to use your
   own, and check it first with `systemone validate systemone.yaml`.
@@ -109,18 +109,40 @@ systemone system          # OS, CPU, memory, GPUs and their driver stack, free d
 systemone system --json   # the same, for scripts
 ```
 
-## Fine-tune locally with Laya Studio
+## Run a model on this machine
+
+```bash
+systemone run opendxp convai-innovations/laya --checkpoint typed-decisions
+systemone run opendxp convai-innovations/laya --state "Customer: where is my parcel?" \
+    --questions '{"intent": {"type": "choice", "instructions": "What does the customer want?",
+                              "criteria": ["refund", "track delivery", "cancel order"]}}'
+systemone run opendxp ./my-package --request request.json --json
+```
+
+Runs the model through [OpenDXP](https://github.com/systemonemodels/opendxp), the
+open standard that lets one runtime answer for any System One model. A model you
+pulled before is used as it is; otherwise only the checkpoint you asked for is
+downloaded. A model with no OpenDXP package yet, from a family OpenDXP converts
+(Laya, Julia 1, Decider), gets one built once on this machine. The runtime gets a
+Python environment of its own (the first conversion downloads PyTorch).
+`--device` picks a backend (`cpu`, `cuda`, `coreml`, ...); the default uses CUDA
+when it can and the CPU otherwise.
+
+## Fine-tune locally with System One Studio
+
+System One Studio was called Laya Studio until September 2026.
 
 ```bash
 systemone run studio
 ```
 
-Fetches [Laya Studio](https://github.com/biplovgautam/LayaStudio) the first time,
+Fetches [System One Studio](https://github.com/biplovgautam/LayaStudio) (formerly
+Laya Studio) the first time,
 updates it on later runs, gives it its own Python environment (through
 [uv](https://docs.astral.sh/uv/) when it is installed, otherwise a virtual
 environment on Python 3.11+) and opens it in your browser. It offers to sign you
 in first, so the studio's Publish button can push a finished run to the registry.
-Your datasets and runs stay in `~/.layastudio/workspace`; the code lives in the
+Your datasets and runs stay in `~/.layastudio/workspace` (the folder keeps its old name); the code lives in the
 platform's data folder and can be deleted at any time.
 
 `--port`, `--no-browser`, `--no-update` and `--workspace` do what they say, and
@@ -128,7 +150,7 @@ anything after `--` goes to the studio: `systemone run studio -- --model
 aac6fef/laya-mlx`. It runs on Apple silicon (MLX), and on Windows and Linux with
 the PyTorch build for the machine's GPU — NVIDIA (CUDA 13 or 12.6), AMD (ROCm on
 Linux; RX 7000 and 9000 on Windows), Intel Arc (XPU) — or the CPU. `systemone
-system` shows what it found. `--source DIR` runs a Laya Studio checkout instead of
+system` shows what it found. `--source DIR` runs a System One Studio checkout instead of
 the managed copy.
 
 ## In Python
@@ -179,7 +201,7 @@ Issues and pull requests are welcome. For anything security-related, see
 - Manifest specification: <https://systemonemodels.tech/docs/manifest>
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
 - Every System One model, compared: <https://systemonemodels.tech/system-one-models>
-- Laya Studio: <https://github.com/biplovgautam/LayaStudio>
+- System One Studio (formerly Laya Studio): <https://github.com/biplovgautam/LayaStudio>
 - System One Models on [LinkedIn](https://www.linkedin.com/company/system-one-models/), [X](https://x.com/SystemoneModels), [Hugging Face](https://huggingface.co/systemonemodels) and [Instagram](https://www.instagram.com/systemonemodels.tech/)
 - Contact: ceo@systemonemodels.tech
 

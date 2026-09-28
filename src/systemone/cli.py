@@ -6,11 +6,13 @@ systemone show biplov/snake-balanced-multilingual
 systemone pull biplov/snake-balanced-multilingual --variant onnx-int8
 systemone push                       # find the models here and choose
 systemone push ./runs/my-run/model --repo me/my-model
-systemone run studio                 # fine-tune locally in Laya Studio
+systemone run studio                 # fine-tune locally in System One Studio
+systemone run opendxp convai-innovations/laya   # answer on this machine, through OpenDXP
 """
 
 from __future__ import annotations
 
+import json
 import os
 import socket
 import sys
@@ -31,9 +33,9 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from systemone import __version__, config, hardware
+from systemone import __version__, config, hardware, opendxp_run
 from systemone import cache as local_cache
-from systemone import studio as laya_studio
+from systemone import studio as studio_app
 from systemone.auth import can_open_browser, device_login
 from systemone.client import Client
 from systemone.discover import Candidate, describe, discover, next_version, parse_selection
@@ -457,14 +459,15 @@ def run_studio(
         bool, typer.Option("--browser/--no-browser", help="Open the studio in a browser tab.")
     ] = True,
     update: Annotated[
-        bool, typer.Option("--update/--no-update", help="Fetch the latest Laya Studio first.")
+        bool, typer.Option("--update/--no-update", help="Fetch the latest System One Studio first.")
     ] = True,
     workspace: Annotated[
         Path | None,
         typer.Option(help="Datasets, runs and checkpoints (default ~/.layastudio/workspace)."),
     ] = None,
     force: Annotated[
-        bool, typer.Option("--force", help="Start even where Laya Studio is not supported yet.")
+        bool,
+        typer.Option("--force", help="Start even where System One Studio is not supported yet."),
     ] = False,
     sign_in: Annotated[
         bool,
@@ -475,23 +478,23 @@ def run_studio(
     source: Annotated[
         Path | None,
         typer.Option(
-            help="Run this Laya Studio checkout instead of the managed copy (development)."
+            help="Run this System One Studio checkout instead of the managed copy (development)."
         ),
     ] = None,
 ) -> None:
-    """Fine-tune models locally in Laya Studio, then publish them here in one click.
+    """Fine-tune models locally in System One Studio, then publish them here in one click.
 
-    Fetches Laya Studio (a separate open-source app) the first time, updates it
+    Fetches System One Studio (a separate open-source app) the first time, updates it
     on later runs, sets up its Python environment and opens it in your browser.
     Anything after -- is passed to the studio, e.g. `-- --model aac6fef/laya-mlx`.
     """
     machine = hardware.detect(
-        laya_studio.app_dir().parent if laya_studio.app_dir().parent.exists() else None
+        studio_app.app_dir().parent if studio_app.app_dir().parent.exists() else None
     )
     console.print("[bold]This machine[/bold]")
     console.print(_machine_table(machine))
     console.print()
-    ok, why = laya_studio.supported_here(machine)
+    ok, why = studio_app.supported_here(machine)
     if not ok and not force:
         fail(f"{why} Pass --force to try anyway.")
 
@@ -506,16 +509,16 @@ def run_studio(
                 "[dim]Skipped. Publish will ask you to run `systemone login` first.[/dim]"
             )
 
-    app_path = source.expanduser().resolve() if source else laya_studio.app_dir()
+    app_path = source.expanduser().resolve() if source else studio_app.app_dir()
     if source and not (app_path / "pyproject.toml").exists():
-        fail(f"{app_path} is not a Laya Studio checkout.")
+        fail(f"{app_path} is not a System One Studio checkout.")
 
     def say(message: str) -> None:
         console.print(f"[dim]{message}[/dim]")
 
     try:
-        state = "local" if source else laya_studio.fetch(app_path, update=update, log=say)
-        launch = laya_studio.prepare(app_path, machine, log=say)
+        state = "local" if source else studio_app.fetch(app_path, update=update, log=say)
+        launch = studio_app.prepare(app_path, machine, log=say)
     except (RuntimeError, OSError) as exc:
         fail(str(exc))
     note = {
@@ -525,12 +528,162 @@ def run_studio(
         "kept": "not updated",
         "local": "from your checkout",
     }[state]
-    console.print(f"Laya Studio {note} [dim]({app_path}, via {launch.how})[/dim]")
+    console.print(f"System One Studio {note} [dim]({app_path}, via {launch.how})[/dim]")
 
-    args = laya_studio.studio_args(
+    args = studio_app.studio_args(
         port=port, browser=browser, workspace=workspace, extra=ctx.args, managed=source is None
     )
-    raise typer.Exit(laya_studio.run([*launch.command, *args], cwd=app_path))
+    raise typer.Exit(studio_app.run([*launch.command, *args], cwd=app_path))
+
+
+def _bars(answer: dict[str, Any]) -> list[tuple[str, float]]:
+    """An answer's options and probabilities, most likely first."""
+    kind = answer.get("type")
+    if kind == "noul":
+        p = float(answer.get("noul", 0.0))
+        return [("true", p), ("false", round(1.0 - p, 4))]
+    probabilities = answer.get("probabilities") or {}
+    legend = answer.get("legend") or {}
+    rows = [(str(legend.get(k, k)), float(v)) for k, v in probabilities.items()]
+    return sorted(rows, key=lambda row: -row[1])
+
+
+def _show_answers(answers: dict[str, Any]) -> None:
+    for qid, answer in answers.items():
+        kind = answer.get("type", "?")
+        if kind == "choice":
+            head = f"{answer.get('choice')}"
+        elif kind == "score":
+            head = f"score {answer.get('score')}"
+        else:
+            head = f"{float(answer.get('noul', 0.0)):.0%} true"
+        console.print(f"[bold]{escape(qid)}[/bold] [dim]({kind})[/dim]  {escape(str(head))}")
+        for label, p in _bars(answer)[:5]:
+            bar = "█" * max(1, round(p * 24)) if p >= 0.005 else ""
+            console.print(f"  {escape(label)[:28]:<28} {p:6.1%} [cyan]{bar}[/cyan]")
+
+
+@run_app.command("opendxp")
+def run_opendxp(
+    model: Annotated[
+        str,
+        typer.Argument(
+            help="namespace/name[@version] on System One Models, or a folder with an odxp.json."
+        ),
+    ],
+    checkpoint: Annotated[
+        str | None,
+        typer.Option(help="Which checkpoint, when the model has several (e.g. typed-decisions)."),
+    ] = None,
+    request: Annotated[
+        Path | None,
+        typer.Option(help="A request JSON file: a state and its questions."),
+    ] = None,
+    state: Annotated[str | None, typer.Option(help="The state to ask about.")] = None,
+    questions: Annotated[
+        str | None,
+        typer.Option(help="The questions, as JSON or a JSON file (with --state)."),
+    ] = None,
+    device: Annotated[
+        str, typer.Option(help="auto, cpu, cuda, coreml, openvino, gpu, ...")
+    ] = "auto",
+    threads: Annotated[int | None, typer.Option(help="CPU threads.")] = None,
+    update: Annotated[
+        bool,
+        typer.Option("--update", help="Check System One Models for a newer version first."),
+    ] = False,
+    as_json: Annotated[bool, typer.Option("--json", help="Print the raw answer JSON.")] = False,
+) -> None:
+    """Answer with a model on this machine, through OpenDXP.
+
+    Uses the model if it is already on this machine, and pulls it from System One
+    Models otherwise, only the checkpoint it needs. A model without an OpenDXP
+    package yet, from a family OpenDXP converts (Laya, Julia 1, Decider), gets one
+    built here once. With no request it answers a built-in example.
+    """
+    import time
+
+    def say(message: str) -> None:
+        console.print(f"[dim]{message}[/dim]")
+
+    try:
+        payload = opendxp_run.load_request(request, state, questions)
+    except (OSError, ValueError) as exc:
+        fail(f"could not read the request: {exc}")
+
+    local = Path(model).expanduser()
+    try:
+        if (local / opendxp_run.MANIFEST).is_file():
+            package, name = local.resolve(), local.name
+            chosen = opendxp_run.Checkpoint(name, "", package=True, family=None)
+            profile = opendxp_run.profile_of(package)
+        else:
+            repo, version = opendxp_run.parse_ref(model)
+            found_local = None if update else opendxp_run.local_snapshot(repo, version)
+            root: Path | None = None
+            if found_local is not None:
+                version, root = found_local
+                listed = opendxp_run.checkpoints(opendxp_run.local_files(root))
+                chosen = opendxp_run.choose(listed, checkpoint)
+                if not opendxp_run.has_checkpoint(root, chosen):
+                    root = None
+                else:
+                    say(f"{repo}@{version} is on this machine ({root})")
+            if root is None:
+                with client() as registry:
+                    detail = registry.model(repo)
+                    version = version or detail.get("latest_version")
+                    listing = next(
+                        (v for v in registry.versions(repo) if v["version"] == version), None
+                    )
+                    if listing is None:
+                        fail(f"{repo} has no version {version}")
+                    paths = [a.get("path") or a["filename"] for a in listing["artifacts"]]
+                    listed = opendxp_run.checkpoints(paths)
+                    chosen = opendxp_run.choose(listed, checkpoint)
+                    say(f"Pulling {repo}@{version}, checkpoint {chosen.name}")
+                    pulled = pull_version(
+                        registry,
+                        repo,
+                        None,
+                        version,
+                        None,
+                        None,
+                        lambda every: opendxp_run.wanted_files(chosen, every, listed),
+                    )
+                root = pulled.root
+            others = [c.name for c in listed if c.name != chosen.name]
+            if others and checkpoint is None:
+                say(f"Checkpoint {chosen.name}; also here: {', '.join(others)} (--checkpoint)")
+            folder = root / chosen.folder if chosen.folder else root
+            if chosen.package:
+                package = folder
+                profile = opendxp_run.profile_of(package)
+            else:
+                profile = None
+                package = opendxp_run.package_dir(repo, str(version), chosen.name)
+        needs = opendxp_run.needs_for(chosen, profile)
+        if (package / opendxp_run.MANIFEST).is_file():
+            needs.discard("export")
+            needs.discard("laya")
+        runtime = opendxp_run.ensure_runtime(needs, log=say)
+        if not (package / opendxp_run.MANIFEST).is_file():
+            package = opendxp_run.build_package(
+                runtime, str(chosen.family), folder, package, f"{repo}:{chosen.name}", log=say
+            )
+        started = time.perf_counter()
+        result = opendxp_run.answer(runtime, package, payload, device=device, threads=threads)
+    except SystemOneError as exc:
+        fail(str(exc))
+
+    if as_json:
+        print(json.dumps(result, indent=2))
+        return
+    if payload is opendxp_run.EXAMPLE:
+        console.print(f"[dim]Example: {escape(payload['state'])}[/dim]")
+    _show_answers(result.get("answers", {}))
+    elapsed = time.perf_counter() - started
+    console.print(f"[dim]Answered through OpenDXP in {elapsed:.1f} s, loading included.[/dim]")
 
 
 cache_app = typer.Typer(help="Inspect or clear the local download cache.", no_args_is_help=True)

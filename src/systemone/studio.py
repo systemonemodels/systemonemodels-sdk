@@ -1,6 +1,7 @@
-"""`systemone run studio`: fetch Laya Studio, keep it current, and start it.
+"""`systemone run studio`: fetch System One Studio, keep it current, and start it.
 
-Laya Studio is the local fine-tuning app that publishes to System One Models.
+System One Studio (formerly Laya Studio) is the local fine-tuning app that
+publishes to System One Models.
 It is a separate open-source project, so the CLI does not depend on it: this
 module clones it once (or downloads its source when git is missing), updates
 it on each run, gives it its own Python environment, and runs it. The studio
@@ -8,10 +9,11 @@ opens in the browser and publishes through this CLI's login.
 
 Layout, under the platform's data directory:
 
-    <data>/systemone/studio/app        the Laya Studio checkout (replaceable)
+    <data>/systemone/studio/app        the System One Studio checkout (replaceable)
 
 Datasets, runs and checkpoints stay in the studio's own workspace,
-~/.layastudio/workspace, so updating or deleting the code never touches them.
+~/.layastudio/workspace (the folder keeps its old name), so updating or deleting
+the code never touches them.
 """
 
 from __future__ import annotations
@@ -35,7 +37,7 @@ STUDIO_REPO = "https://github.com/biplovgautam/LayaStudio"
 ENV_REPO = "SYSTEMONE_STUDIO_REPO"
 ENV_DIR = "SYSTEMONE_STUDIO_DIR"
 DEFAULT_WORKSPACE = Path("~/.layastudio/workspace")
-# Laya Studio's own floor.
+# System One Studio's own floor.
 MIN_PYTHON = (3, 11)
 
 Log = Callable[[str], None]
@@ -58,7 +60,7 @@ def app_dir() -> Path:
 
 
 def supported_here(machine: hardware.Machine | None = None) -> tuple[bool, str]:
-    """Whether Laya Studio can train on this machine, and why not.
+    """Whether System One Studio can train on this machine, and why not.
 
     Apple silicon trains on MLX; Windows and Linux on PyTorch — NVIDIA, AMD, Intel Arc or
     the CPU. Only Intel Macs are left out: neither current PyTorch nor MLX builds for them.
@@ -78,7 +80,7 @@ def _run(cmd: Sequence[str], cwd: Path | None = None) -> subprocess.CompletedPro
 
 
 def fetch(dest: Path, *, update: bool = True, log: Log = print) -> str:
-    """Make `dest` a current Laya Studio checkout. Returns what happened.
+    """Make `dest` a current System One Studio checkout. Returns what happened.
 
     With git: clone once, fast-forward after. Without git: download the source
     archive. An update that fails — offline, local edits — keeps the copy that
@@ -91,9 +93,9 @@ def fetch(dest: Path, *, update: bool = True, log: Log = print) -> str:
             dest.parent.mkdir(parents=True, exist_ok=True)
             if dest.exists() and any(dest.iterdir()):
                 raise RuntimeError(
-                    f"{dest} exists and is not a Laya Studio checkout; move it away."
+                    f"{dest} exists and is not a System One Studio checkout; move it away."
                 )
-            log(f"Cloning Laya Studio from {repo_url()}")
+            log(f"Cloning System One Studio from {repo_url()}")
             done = _run([git, "clone", "--depth", "1", repo_url(), str(dest)])
             if done.returncode != 0:
                 raise RuntimeError(
@@ -108,7 +110,8 @@ def fetch(dest: Path, *, update: bool = True, log: Log = print) -> str:
         pulled = _run([git, "pull", "--ff-only", "--quiet"], cwd=dest)
         if pulled.returncode != 0:
             log(
-                "Could not update Laya Studio (offline, or local changes); using the copy you have."
+                "Could not update System One Studio (offline, or local changes); "
+                "using the copy you have."
             )
             return "kept"
         after = _run([git, "rev-parse", "HEAD"], cwd=dest).stdout.strip()
@@ -119,7 +122,7 @@ def fetch(dest: Path, *, update: bool = True, log: Log = print) -> str:
         return _download(dest, log)
     except OSError as exc:
         if exists:
-            log(f"Could not download Laya Studio ({exc}); using the copy you have.")
+            log(f"Could not download System One Studio ({exc}); using the copy you have.")
             return "kept"
         raise
 
@@ -127,8 +130,8 @@ def fetch(dest: Path, *, update: bool = True, log: Log = print) -> str:
 def _download(dest: Path, log: Log) -> str:
     url = f"{repo_url()}/archive/refs/heads/main.tar.gz"
     if not url.startswith("https://"):
-        raise RuntimeError("The Laya Studio source must be fetched over https.")
-    log(f"Downloading Laya Studio from {url}")
+        raise RuntimeError("The System One Studio source must be fetched over https.")
+    log(f"Downloading System One Studio from {url}")
     with tempfile.TemporaryDirectory() as tmp:
         archive = Path(tmp) / "studio.tar.gz"
         with urllib.request.urlopen(url, timeout=60) as response, archive.open("wb") as out:  # noqa: S310 - https checked above
@@ -153,10 +156,10 @@ def extract(archive: Path, dest: Path) -> int:
             if not parts:
                 continue
             if member.name.startswith("/") or ".." in parts:
-                raise RuntimeError(f"Unsafe path in the Laya Studio archive: {member.name}")
+                raise RuntimeError(f"Unsafe path in the System One Studio archive: {member.name}")
             target = (root / Path(*parts)).resolve()
             if root not in target.parents and target != root:
-                raise RuntimeError(f"Unsafe path in the Laya Studio archive: {member.name}")
+                raise RuntimeError(f"Unsafe path in the System One Studio archive: {member.name}")
             if member.isdir():
                 target.mkdir(parents=True, exist_ok=True)
             elif member.isfile():
@@ -231,19 +234,20 @@ def prepare(app: Path, machine: hardware.Machine | None = None, *, log: Log = pr
     python = _python_for_venv()
     if python is None:
         raise RuntimeError(
-            "Laya Studio needs Python 3.11 or newer. Install uv (https://docs.astral.sh/uv/), "
-            "which fetches one for you, or install Python 3.11+, then run this again."
+            "System One Studio needs Python 3.11 or newer. Install uv "
+            "(https://docs.astral.sh/uv/), which fetches one for you, or install Python 3.11+, "
+            "then run this again."
         )
     venv = app / ".venv"
     stamp = venv / ".systemone-deps"
     wanted = hashlib.sha256((app / "pyproject.toml").read_bytes()).hexdigest()
     if not _venv_bin(venv, "python").exists():
-        log("Creating Laya Studio's Python environment")
+        log("Creating System One Studio's Python environment")
         made = _run([python, "-m", "venv", str(venv)], cwd=app)
         if made.returncode != 0:
             raise RuntimeError(f"Could not create a virtual environment: {made.stderr.strip()}")
     if not stamp.exists() or stamp.read_text().strip() != wanted:
-        log("Installing Laya Studio's dependencies (the first time takes a few minutes)")
+        log("Installing System One Studio's dependencies (the first time takes a few minutes)")
         pip = subprocess.run(  # noqa: S603 - the environment's own python, no shell
             [
                 str(_venv_bin(venv, "python")),
@@ -259,7 +263,7 @@ def prepare(app: Path, machine: hardware.Machine | None = None, *, log: Log = pr
         )
         if pip.returncode != 0:
             raise RuntimeError(
-                "Installing Laya Studio's dependencies failed; see the output above."
+                "Installing System One Studio's dependencies failed; see the output above."
             )
         stamp.write_text(wanted)
     return Launch([str(_venv_bin(venv, "layastudio"))], "venv")
@@ -274,14 +278,14 @@ def _prepare_torch(app: Path, build: hardware.TorchBuild, uv: str | None, log: L
     ).hexdigest()
     log(f"PyTorch for this machine: {build.reason}")
     if not python.exists():
-        log("Creating Laya Studio's Python environment")
+        log("Creating System One Studio's Python environment")
         if uv:
             made = _run([uv, "venv", "--python", "3.12", str(venv)], cwd=app)
         else:
             base = _python_for_venv()
             if base is None:
                 raise RuntimeError(
-                    "Laya Studio needs Python 3.11 or newer. Install uv "
+                    "System One Studio needs Python 3.11 or newer. Install uv "
                     "(https://docs.astral.sh/uv/), which fetches one for you, or install "
                     "Python 3.11+, then run this again."
                 )
@@ -292,7 +296,7 @@ def _prepare_torch(app: Path, build: hardware.TorchBuild, uv: str | None, log: L
     if stamp.exists() and stamp.read_text().strip() == wanted:
         return launch
 
-    log("Installing PyTorch and Laya Studio (the first time downloads a few GB)")
+    log("Installing PyTorch and System One Studio (the first time downloads a few GB)")
     target = f"{app}[torch,systemone]"
     if uv:
         pip = [uv, "pip", "install", "--python", str(python)]
@@ -320,7 +324,7 @@ def _prepare_torch(app: Path, build: hardware.TorchBuild, uv: str | None, log: L
         done = subprocess.run(step, cwd=app, check=False)  # noqa: S603 - installers, no shell
         if done.returncode != 0:
             raise RuntimeError(
-                "Installing Laya Studio's dependencies failed; see the output above."
+                "Installing System One Studio's dependencies failed; see the output above."
             )
     stamp.write_text(wanted)
     return launch

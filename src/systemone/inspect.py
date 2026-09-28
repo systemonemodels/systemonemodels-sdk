@@ -1,6 +1,6 @@
 """Read a model directory and work out what it is.
 
-A LayaStudio export already records everything a manifest needs — questions.json
+A System One Studio export already records everything a manifest needs — questions.json
 declares the decision primitive, rl_agent_config.json records the base model and
 the encoder, export.json carries accuracy and latency. A training run records
 more: run.json names it, eval.json holds the held-out evaluation, and a model
@@ -166,7 +166,7 @@ def slugs(values: Iterable[Any]) -> list[str]:
 def repo_ref(value: Any) -> str | None:
     """A base model reference as the registry wants it: "owner/name".
 
-    LayaStudio writes "hub:owner/name", and a Hugging Face card may list several
+    System One Studio writes "hub:owner/name", and a Hugging Face card may list several
     base models; the first is the one fine-tuned from.
     """
     if isinstance(value, list):
@@ -196,7 +196,7 @@ def _license(meta: dict[str, Any]) -> tuple[str | None, str | None]:
 
 
 def run_dir(source: Path, export: dict[str, Any]) -> Path | None:
-    """The LayaStudio training run a model folder came from, if it is on disk.
+    """The System One Studio training run a model folder came from, if it is on disk.
 
     A checkpoint is `runs/<run id>/model`; an export records its run in
     export.json and sits in `exports/`, beside `runs/`.
@@ -306,7 +306,7 @@ def _summary(
     if title:
         parts.append(title.rstrip(".") + ".")
     elif name := export.get("model"):
-        # "run:<name>" is an internal LayaStudio detail.
+        # "run:<name>" is an internal System One Studio detail.
         clean = str(name).split(":", 1)[-1]
         target = export.get("target", "export")
         precision = export.get("precision", "fp32")
@@ -361,9 +361,9 @@ def inspect(source: Path) -> Inspected:
         found.hardware = "either"
         found.origin = "laya-export" if export else "laya-run" if run_root else None
 
-    # The card's author chose its base model deliberately; LayaStudio's own
+    # The card's author chose its base model deliberately; System One Studio's own
     # records are the fallback. Both say where the base came from: a Hugging
-    # Face card names Hugging Face repositories, and LayaStudio's "hub:" prefix
+    # Face card names Hugging Face repositories, and System One Studio's "hub:" prefix
     # is its reference to one.
     for raw, where in (
         (meta.get("base_model"), "huggingface"),

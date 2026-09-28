@@ -143,7 +143,7 @@ def model_card(release: Release, found: Inspected) -> tuple[str, bool]:
 def home_mentions(parts: Sequence[Part], home: Path | None = None) -> list[str]:
     """Files that would publish the path of the author's home folder.
 
-    LayaStudio records where things were on disk — export.json's `path`,
+    System One Studio records where things were on disk — export.json's `path`,
     laya_finetune.json's `base_model_dir` — and a public registry is the wrong
     place for a machine's username. Reported, never rewritten: changing a file
     on the way out would publish something other than what is on disk.

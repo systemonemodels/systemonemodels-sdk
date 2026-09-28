@@ -1,6 +1,6 @@
 """Find the models worth publishing under a directory.
 
-Point `systemone push` at a Laya Studio workspace — or any folder — and it
+Point `systemone push` at a System One Studio workspace — or any folder — and it
 finds every model inside, however deep: exported variants (`exports/<run>-onnx-int8`),
 trained checkpoints (`runs/<run>/model`), or any directory that holds weights.
 
@@ -9,7 +9,7 @@ A directory is a model when it directly contains weights: `model.onnx`,
 there — a model's own `encoder/` or `tokenizer/` folders are part of it, not
 further models — and never enters datasets, virtual environments or caches.
 
-Names come from what Laya Studio records: an export's `export.json` names the
+Names come from what System One Studio records: an export's `export.json` names the
 training run it came from, and the run's own folder name is the model. Exports
 of one run become variants of one repository, which is how the registry keeps
 them: one repository, one folder per variant.
@@ -51,7 +51,8 @@ SKIP_DIRS = {
 }
 MAX_DEPTH = 6
 
-# Laya Studio suffixes its run ids with a timestamp: "snake-balanced-multilingual-0923-005225".
+# System One Studio suffixes its run ids with a timestamp:
+# "snake-balanced-multilingual-0923-005225".
 _TIMESTAMP = re.compile(r"-\d{4}-\d{6}$")
 _UNSAFE = re.compile(r"[^a-z0-9._-]+")
 

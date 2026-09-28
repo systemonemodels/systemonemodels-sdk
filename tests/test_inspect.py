@@ -11,7 +11,7 @@ from systemone.inspect import build_manifest, inspect, split_front_matter, walk
 
 
 def write_export(root: Path) -> None:
-    """A minimal LayaStudio export, with the three files inference reads."""
+    """A minimal System One Studio export, with the three files inference reads."""
     (root / "encoder").mkdir(parents=True)
     (root / "tokenizer").mkdir()
     (root / "encoder" / "config.json").write_text('{"model_type": "bert"}')
@@ -95,7 +95,7 @@ def test_manifest_is_valid_shaped_yaml(tmp_path: Path) -> None:
 
 
 def test_an_unrecognised_directory_still_produces_a_manifest(tmp_path: Path) -> None:
-    """Not every model comes from LayaStudio. The result is a starting point
+    """Not every model comes from System One Studio. The result is a starting point
     rather than a refusal."""
     (tmp_path / "weights.bin").write_bytes(b"opaque")
     found = inspect(tmp_path)

@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- `systemone run opendxp MODEL` answers with a model on this machine through
+  [OpenDXP](https://github.com/systemonemodels/opendxp), the open standard for
+  System One models. It uses the model if it was pulled before, and otherwise
+  pulls only the checkpoint it needs. A model without an OpenDXP package, from
+  a family OpenDXP converts (Laya, Julia 1, Decider), gets one built once. The
+  runtime lives in an environment of its own. With no request it answers a
+  built-in example; `--state` and `--questions`, or `--request`, ask your own,
+  and a folder with an `odxp.json` runs directly.
+- Laya Studio is now System One Studio. `systemone run studio` runs it as
+  before; its workspace stays in `~/.layastudio/workspace`.
+
 ## 0.2.4
 
 - `systemone run studio` fetches Laya Studio, keeps it up to date, sets up its

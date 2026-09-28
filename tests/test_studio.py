@@ -1,4 +1,4 @@
-"""`systemone run studio`: fetch Laya Studio safely, run it in its own environment."""
+"""`systemone run studio`: fetch System One Studio safely, run it in its own environment."""
 
 from __future__ import annotations
 
@@ -224,7 +224,7 @@ def test_run_studio_fetches_prepares_and_runs(
         ["run", "studio", "--no-sign-in", "--no-browser", "--", "--model", "aac6fef/laya-mlx"],
     )
     assert result.exit_code == 0, result.output
-    assert "Laya Studio up to date" in plain(result.output)
+    assert "System One Studio up to date" in plain(result.output)
     assert "RTX 4090" in plain(result.output) and "NVIDIA CUDA" in plain(result.output)
     assert ran == [["layastudio", "--no-browser", "--model", "aac6fef/laya-mlx"]]
 

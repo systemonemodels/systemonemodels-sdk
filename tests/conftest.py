@@ -1,4 +1,4 @@
-"""A LayaStudio workspace in miniature, laid out the way the real one is."""
+"""A System One Studio workspace in miniature, laid out the way the real one is."""
 
 from __future__ import annotations
 

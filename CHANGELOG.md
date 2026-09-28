@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - `systemone run opendxp MODEL` answers with a model on this machine through
   [OpenDXP](https://github.com/systemonemodels/opendxp), the open standard for

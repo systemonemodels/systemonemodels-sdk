@@ -1,4 +1,4 @@
-"""HTTP client for the registry.
+"""HTTP client for the registry, and for the models it serves.
 
 Synchronous on purpose. The CLI is the primary consumer and an async CLI buys
 nothing but an event loop to explain; uploads and downloads are I/O-bound on one
@@ -8,20 +8,22 @@ connection at a time either way, and httpx gives connection reuse without it.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Iterable, Iterator
+import os
+from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
 import httpx
 
 from systemone import __version__
-from systemone.config import Config, load
+from systemone.config import ENV_API_KEY, Config, load, web_url
 from systemone.errors import (
     ApiError,
     AuthError,
     ChecksumMismatch,
     ConnectionFailed,
     NotFound,
+    RateLimited,
     SystemOneError,
 )
 
@@ -41,8 +43,38 @@ def sha256_file(path: Path) -> str:
 
 
 class Client:
-    def __init__(self, config: Config | None = None, timeout: float = 60.0):
+    """The registry, and the models it serves through the inference API.
+
+    Registry calls (search, pull, push) are made as the signed-in account: the
+    token from `systemone login`, or SYSTEMONE_TOKEN. Calls to models
+    (`decide`, `usage`) use an API key: the one given here, else
+    SYSTEMONE_API_KEY, else that same login token. An API key never reaches the
+    registry calls, so setting one cannot change what `systemone push` does.
+
+        from systemone import Client
+
+        client = Client("s1_pat_...")  # or set SYSTEMONE_API_KEY
+        result = client.decide(
+            "nokia/anyjev",
+            "Customer: where is my parcel?",
+            {"intent": {"type": "choice", "instructions": "What does the customer want?",
+                        "criteria": ["refund", "track delivery", "cancel order"]}},
+        )
+        result["answers"]["intent"]["choice"]
+    """
+
+    def __init__(
+        self,
+        api_key: str | Config | None = None,
+        timeout: float = 60.0,
+        *,
+        config: Config | None = None,
+    ):
+        if isinstance(api_key, Config):
+            # Client(config), the way every release before 0.4 was called.
+            config, api_key = api_key, None
         self.config = config or load()
+        self.api_key = api_key or os.environ.get(ENV_API_KEY) or None
         headers = {"user-agent": USER_AGENT, "accept": "application/json"}
         if self.config.token:
             headers["authorization"] = f"Bearer {self.config.token}"
@@ -64,7 +96,10 @@ class Client:
 
     # --- plumbing ---------------------------------------------------------
 
-    def _request(self, method: str, path: str, **kwargs: Any) -> Any:
+    def _request(
+        self, method: str, path: str, *, auth_error: str | None = None, **kwargs: Any
+    ) -> Any:
+        """One call. `auth_error` explains a 401 when the server's own words do not."""
         try:
             response = self._http.request(method, path, **kwargs)
         except httpx.TransportError as exc:
@@ -77,9 +112,20 @@ class Client:
             ) from exc
 
         if response.status_code == 401:
+            if auth_error is not None:
+                raise AuthError(_detail(response) or auth_error)
             raise AuthError("Not signed in. Run `systemone login`.")
         if response.status_code == 404:
             raise NotFound(_detail(response) or "not found")
+        if response.status_code == 429:
+            payload = _json(response) or {}
+            raise RateLimited(
+                429,
+                payload.get("detail", "Too many requests. Wait a little and try again."),
+                payload.get("code", "rate_limited"),
+                payload.get("errors", []),
+                retry_after=_seconds(response.headers.get("retry-after")),
+            )
         if response.status_code >= 400:
             payload = _json(response) or {}
             raise ApiError(
@@ -140,6 +186,67 @@ class Client:
             "/v1/manifest/validate",
             content=manifest.encode(),
             headers={"content-type": "text/plain"},
+        )
+        return report
+
+    # --- models, through the inference API ---------------------------------
+
+    def _keyed(self) -> dict[str, str]:
+        """The Authorization header for calls to models."""
+        key = self.api_key or self.config.token
+        if not key:
+            raise AuthError(
+                f"No API key. Pass Client(api_key) or set {ENV_API_KEY}; create one at "
+                f"{web_url(self.config.endpoint)}/settings/api."
+            )
+        return {"authorization": f"Bearer {key}"}
+
+    def decide(
+        self,
+        model: str,
+        state: str,
+        questions: Mapping[str, Mapping[str, Any]],
+        *,
+        checkpoint: str | None = None,
+    ) -> dict[str, Any]:
+        """Ask a model the inference API serves. Each question answered is one decision.
+
+        `questions` maps an id of your choosing to a question: `type` (choice,
+        score or noul), `instructions`, and `criteria` (choice: the options, as
+        a list or {option: description}; score: the levels, lowest first; noul:
+        nothing). The answer has `answers` by question id, `usage` and
+        `latency_ms`. Raises RateLimited when over a limit or out of decisions.
+        """
+        body: dict[str, Any] = {
+            "model": model,
+            "state": state,
+            "questions": {qid: dict(q) for qid, q in questions.items()},
+        }
+        if checkpoint is not None:
+            body["checkpoint"] = checkpoint
+        answer: dict[str, Any] = self._request(
+            "POST",
+            "/v1/systemone",
+            json=body,
+            headers=self._keyed(),
+            auth_error="The API key was not accepted.",
+        )
+        return answer
+
+    def served_models(self) -> list[dict[str, Any]]:
+        """The models the inference API serves: id, state, checkpoints and limits."""
+        listing: dict[str, Any] = self._request("GET", "/v1/systemone/models")
+        models: list[dict[str, Any]] = listing.get("data", [])
+        return models
+
+    def usage(self, days: int = 30) -> dict[str, Any]:
+        """Your plan, what is left of it, and your calls by day, model and key."""
+        report: dict[str, Any] = self._request(
+            "GET",
+            "/v1/usage",
+            params={"days": days},
+            headers=self._keyed(),
+            auth_error="The API key was not accepted.",
         )
         return report
 
@@ -299,3 +406,10 @@ def _json(response: httpx.Response) -> Any:
 def _detail(response: httpx.Response) -> str | None:
     payload = _json(response)
     return payload.get("detail") if isinstance(payload, dict) else None
+
+
+def _seconds(value: str | None) -> float | None:
+    try:
+        return float(value) if value else None
+    except ValueError:
+        return None

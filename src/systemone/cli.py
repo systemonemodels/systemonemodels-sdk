@@ -686,6 +686,59 @@ def run_opendxp(
     console.print(f"[dim]Answered through OpenDXP in {elapsed:.1f} s, loading included.[/dim]")
 
 
+@app.command()
+def decide(
+    model: Annotated[
+        str, typer.Argument(help="namespace/name of a model the inference API serves.")
+    ],
+    request: Annotated[
+        Path | None,
+        typer.Option(help="A request JSON file: a state and its questions."),
+    ] = None,
+    state: Annotated[str | None, typer.Option(help="The state to ask about.")] = None,
+    questions: Annotated[
+        str | None,
+        typer.Option(help="The questions, as JSON or a JSON file (with --state)."),
+    ] = None,
+    checkpoint: Annotated[
+        str | None,
+        typer.Option(help="Which checkpoint, when the model has several."),
+    ] = None,
+    as_json: Annotated[bool, typer.Option("--json", help="Print the raw answer JSON.")] = False,
+) -> None:
+    """Ask a model on System One Models' inference API, from here.
+
+    Uses SYSTEMONE_API_KEY, or your `systemone login`. Each question answered is
+    one decision of your plan. With no request it asks a built-in example.
+    """
+    try:
+        payload = opendxp_run.load_request(request, state, questions)
+    except (OSError, ValueError) as exc:
+        fail(f"could not read the request: {exc}")
+    try:
+        with client() as registry:
+            result = registry.decide(
+                model, payload.get("state", ""), payload["questions"], checkpoint=checkpoint
+            )
+    except KeyError:
+        fail("the request has no questions")
+    except SystemOneError as exc:
+        fail(str(exc))
+
+    if as_json:
+        print(json.dumps(result, indent=2))
+        return
+    if payload is opendxp_run.EXAMPLE:
+        console.print(f"[dim]Example: {escape(payload['state'])}[/dim]")
+    _show_answers(result.get("answers", {}))
+    usage = result.get("usage") or {}
+    console.print(
+        f"[dim]{escape(str(result.get('model')))} ({escape(str(result.get('checkpoint')))}) "
+        f"answered in {float(result.get('latency_ms', 0.0)):.0f} ms, "
+        f"{usage.get('decisions', 0)} decisions.[/dim]"
+    )
+
+
 cache_app = typer.Typer(help="Inspect or clear the local download cache.", no_args_is_help=True)
 app.add_typer(cache_app, name="cache")
 

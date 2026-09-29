@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.4.0
+
+- Call the models System One Models serves, from your own code:
+  `Client(api_key).decide(model, state, questions)` asks one through the
+  inference API and returns its answers, one per question, with the usage and
+  the time it took. The key is the one given, else `SYSTEMONE_API_KEY`, else
+  your `systemone login`; it is used only for calls to models, never for
+  registry calls, so setting it cannot change what `push` does. Create keys at
+  systemonemodels.tech/settings/api.
+- `client.served_models()` lists the models you can call, and `client.usage()`
+  shows your plan, what is left of it and your calls by day, model and key.
+- `RateLimited` (an `ApiError`) is raised on HTTP 429, over a per-minute limit
+  or out of decisions, with `retry_after` in seconds.
+- `systemone decide MODEL --state ... --questions ...` asks from the terminal,
+  with `--request FILE` and `--json` like `run opendxp`; with no request it asks
+  a built-in example.
+- `Client(config)` still works as before; the first argument may now be an API
+  key instead.
+
 ## 0.3.0
 
 - `systemone run opendxp MODEL` answers with a model on this machine through

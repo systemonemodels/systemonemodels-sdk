@@ -40,3 +40,21 @@ class ApiError(SystemOneError):
 
 class ChecksumMismatch(SystemOneError):
     pass
+
+
+class RateLimited(ApiError):
+    """Too many requests a minute, or a plan's decisions used up (HTTP 429).
+
+    `retry_after` is the number of seconds the server asked to wait, when it said.
+    """
+
+    def __init__(
+        self,
+        status: int,
+        detail: str,
+        code: str = "rate_limited",
+        errors: list[dict[str, str]] | None = None,
+        retry_after: float | None = None,
+    ):
+        super().__init__(status, detail, code, errors)
+        self.retry_after = retry_after

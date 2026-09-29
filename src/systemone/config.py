@@ -17,6 +17,8 @@ APP_NAME = "systemone"
 DEFAULT_ENDPOINT = "https://api.systemonemodels.tech"
 ENV_TOKEN = "SYSTEMONE_TOKEN"  # noqa: S105 - the variable name, not a token
 ENV_ENDPOINT = "SYSTEMONE_ENDPOINT"
+# An API key for calling models (Client.decide); registry calls never use it.
+ENV_API_KEY = "SYSTEMONE_API_KEY"  # noqa: S105 - the variable name, not a key
 
 
 def web_url(endpoint: str) -> str:

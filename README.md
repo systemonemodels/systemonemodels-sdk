@@ -153,6 +153,44 @@ Linux; RX 7000 and 9000 on Windows), Intel Arc (XPU) — or the CPU. `systemone
 system` shows what it found. `--source DIR` runs a System One Studio checkout instead of
 the managed copy.
 
+## Call a model through the API
+
+Models with a live playground on System One Models can be called from your own
+code. Create an API key at
+[Settings → API](https://systemonemodels.tech/settings/api); each question a
+model answers is one decision of your plan (the free plan has 500 a day).
+
+```python
+from systemone import Client
+
+client = Client("s1_pat_...")  # or set SYSTEMONE_API_KEY
+result = client.decide(
+    "nokia/anyjev",
+    "Customer: I was charged twice and want my money back.",
+    {
+        "intent": {
+            "type": "choice",
+            "instructions": "What does the customer want?",
+            "criteria": ["refund", "track delivery", "cancel order"],
+        }
+    },
+)
+print(result["answers"]["intent"]["choice"])
+```
+
+From the terminal:
+
+```bash
+export SYSTEMONE_API_KEY=s1_pat_...
+systemone decide nokia/anyjev --state "Customer: where is my parcel?" \
+    --questions '{"intent": {"type": "choice", "instructions": "What does the customer want?", "criteria": ["refund", "track delivery"]}}'
+```
+
+`client.served_models()` lists what can be called and `client.usage()` what is
+left of your plan. Over a limit, `decide` raises `RateLimited` with
+`retry_after` in seconds. The request and answer format is in the
+[Inference API docs](https://systemonemodels.tech/docs/inference).
+
 ## In Python
 
 ```python
@@ -177,6 +215,7 @@ with Client() as registry:
 | Variable | |
 | --- | --- |
 | `SYSTEMONE_TOKEN` | Access token. Takes precedence over a stored login, for CI. |
+| `SYSTEMONE_API_KEY` | API key for calling models (`decide`); never used for registry calls. |
 | `SYSTEMONE_ENDPOINT` | API address, for a self-hosted registry. |
 | `SYSTEMONE_HOME` | Where the login is stored (`0600`). Defaults to the platform config directory. |
 | `SYSTEMONE_CACHE` | Where downloaded files are cached. |

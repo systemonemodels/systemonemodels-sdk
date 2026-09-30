@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0
+
+- `systemone run noulxp`: OpenDXP, the standard it runs models through, is now
+  NoulXP (another project already used the name). It installs `noulxp` 0.4
+  into its own environment, in place of `opendxp` 0.1; the format and the
+  answers are the same, and packages made before the rename (an `odxp.json`)
+  still run. `systemone run opendxp` still works, with a note, and
+  `SYSTEMONE_OPENDXP_SPEC` is still read (now `SYSTEMONE_NOULXP_SPEC`).
+
 ## 0.4.0
 
 - Call the models System One Models serves, from your own code:

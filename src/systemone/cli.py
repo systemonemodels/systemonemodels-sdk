@@ -7,7 +7,7 @@ systemone pull biplov/snake-balanced-multilingual --variant onnx-int8
 systemone push                       # find the models here and choose
 systemone push ./runs/my-run/model --repo me/my-model
 systemone run studio                 # fine-tune locally in System One Studio
-systemone run opendxp convai-innovations/laya   # answer on this machine, through OpenDXP
+systemone run noulxp convai-innovations/laya   # answer on this machine, through NoulXP
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from systemone import __version__, config, hardware, opendxp_run
+from systemone import __version__, config, hardware, noulxp_run
 from systemone import cache as local_cache
 from systemone import studio as studio_app
 from systemone.auth import can_open_browser, device_login
@@ -563,12 +563,13 @@ def _show_answers(answers: dict[str, Any]) -> None:
             console.print(f"  {escape(label)[:28]:<28} {p:6.1%} [cyan]{bar}[/cyan]")
 
 
-@run_app.command("opendxp")
-def run_opendxp(
+@run_app.command("noulxp")
+def run_noulxp(
+    ctx: typer.Context,
     model: Annotated[
         str,
         typer.Argument(
-            help="namespace/name[@version] on System One Models, or a folder with an odxp.json."
+            help="namespace/name[@version] on System One Models, or a folder with a noulxp.json."
         ),
     ],
     checkpoint: Annotated[
@@ -594,11 +595,11 @@ def run_opendxp(
     ] = False,
     as_json: Annotated[bool, typer.Option("--json", help="Print the raw answer JSON.")] = False,
 ) -> None:
-    """Answer with a model on this machine, through OpenDXP.
+    """Answer with a model on this machine, through NoulXP.
 
     Uses the model if it is already on this machine, and pulls it from System One
-    Models otherwise, only the checkpoint it needs. A model without an OpenDXP
-    package yet, from a family OpenDXP converts (Laya, Julia 1, Decider), gets one
+    Models otherwise, only the checkpoint it needs. A model without a NoulXP
+    package yet, from a family NoulXP converts (Laya, Julia 1, Decider), gets one
     built here once. With no request it answers a built-in example.
     """
     import time
@@ -606,26 +607,28 @@ def run_opendxp(
     def say(message: str) -> None:
         console.print(f"[dim]{message}[/dim]")
 
+    if ctx.info_name == "opendxp":
+        say("`systemone run opendxp` is now `systemone run noulxp`: NoulXP was called OpenDXP.")
     try:
-        payload = opendxp_run.load_request(request, state, questions)
+        payload = noulxp_run.load_request(request, state, questions)
     except (OSError, ValueError) as exc:
         fail(f"could not read the request: {exc}")
 
     local = Path(model).expanduser()
     try:
-        if (local / opendxp_run.MANIFEST).is_file():
+        if noulxp_run.manifest_in(local) is not None:
             package, name = local.resolve(), local.name
-            chosen = opendxp_run.Checkpoint(name, "", package=True, family=None)
-            profile = opendxp_run.profile_of(package)
+            chosen = noulxp_run.Checkpoint(name, "", package=True, family=None)
+            profile = noulxp_run.profile_of(package)
         else:
-            repo, version = opendxp_run.parse_ref(model)
-            found_local = None if update else opendxp_run.local_snapshot(repo, version)
+            repo, version = noulxp_run.parse_ref(model)
+            found_local = None if update else noulxp_run.local_snapshot(repo, version)
             root: Path | None = None
             if found_local is not None:
                 version, root = found_local
-                listed = opendxp_run.checkpoints(opendxp_run.local_files(root))
-                chosen = opendxp_run.choose(listed, checkpoint)
-                if not opendxp_run.has_checkpoint(root, chosen):
+                listed = noulxp_run.checkpoints(noulxp_run.local_files(root))
+                chosen = noulxp_run.choose(listed, checkpoint)
+                if not noulxp_run.has_checkpoint(root, chosen):
                     root = None
                 else:
                     say(f"{repo}@{version} is on this machine ({root})")
@@ -639,8 +642,8 @@ def run_opendxp(
                     if listing is None:
                         fail(f"{repo} has no version {version}")
                     paths = [a.get("path") or a["filename"] for a in listing["artifacts"]]
-                    listed = opendxp_run.checkpoints(paths)
-                    chosen = opendxp_run.choose(listed, checkpoint)
+                    listed = noulxp_run.checkpoints(paths)
+                    chosen = noulxp_run.choose(listed, checkpoint)
                     say(f"Pulling {repo}@{version}, checkpoint {chosen.name}")
                     pulled = pull_version(
                         registry,
@@ -649,7 +652,7 @@ def run_opendxp(
                         version,
                         None,
                         None,
-                        lambda every: opendxp_run.wanted_files(chosen, every, listed),
+                        lambda every: noulxp_run.wanted_files(chosen, every, listed),
                     )
                 root = pulled.root
             others = [c.name for c in listed if c.name != chosen.name]
@@ -658,32 +661,36 @@ def run_opendxp(
             folder = root / chosen.folder if chosen.folder else root
             if chosen.package:
                 package = folder
-                profile = opendxp_run.profile_of(package)
+                profile = noulxp_run.profile_of(package)
             else:
                 profile = None
-                package = opendxp_run.package_dir(repo, str(version), chosen.name)
-        needs = opendxp_run.needs_for(chosen, profile)
-        if (package / opendxp_run.MANIFEST).is_file():
+                package = noulxp_run.package_dir(repo, str(version), chosen.name)
+        needs = noulxp_run.needs_for(chosen, profile)
+        if noulxp_run.manifest_in(package) is not None:
             needs.discard("export")
             needs.discard("laya")
-        runtime = opendxp_run.ensure_runtime(needs, log=say)
-        if not (package / opendxp_run.MANIFEST).is_file():
-            package = opendxp_run.build_package(
+        runtime = noulxp_run.ensure_runtime(needs, log=say)
+        if noulxp_run.manifest_in(package) is None:
+            package = noulxp_run.build_package(
                 runtime, str(chosen.family), folder, package, f"{repo}:{chosen.name}", log=say
             )
         started = time.perf_counter()
-        result = opendxp_run.answer(runtime, package, payload, device=device, threads=threads)
+        result = noulxp_run.answer(runtime, package, payload, device=device, threads=threads)
     except SystemOneError as exc:
         fail(str(exc))
 
     if as_json:
         print(json.dumps(result, indent=2))
         return
-    if payload is opendxp_run.EXAMPLE:
+    if payload is noulxp_run.EXAMPLE:
         console.print(f"[dim]Example: {escape(payload['state'])}[/dim]")
     _show_answers(result.get("answers", {}))
     elapsed = time.perf_counter() - started
-    console.print(f"[dim]Answered through OpenDXP in {elapsed:.1f} s, loading included.[/dim]")
+    console.print(f"[dim]Answered through NoulXP in {elapsed:.1f} s, loading included.[/dim]")
+
+
+# The command's name before the rename, kept so scripts that call it still work.
+run_app.command("opendxp", hidden=True)(run_noulxp)
 
 
 @app.command()
@@ -712,7 +719,7 @@ def decide(
     one decision of your plan. With no request it asks a built-in example.
     """
     try:
-        payload = opendxp_run.load_request(request, state, questions)
+        payload = noulxp_run.load_request(request, state, questions)
     except (OSError, ValueError) as exc:
         fail(f"could not read the request: {exc}")
     try:
@@ -728,7 +735,7 @@ def decide(
     if as_json:
         print(json.dumps(result, indent=2))
         return
-    if payload is opendxp_run.EXAMPLE:
+    if payload is noulxp_run.EXAMPLE:
         console.print(f"[dim]Example: {escape(payload['state'])}[/dim]")
     _show_answers(result.get("answers", {}))
     usage = result.get("usage") or {}

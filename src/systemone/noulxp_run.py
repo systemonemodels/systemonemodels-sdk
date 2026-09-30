@@ -1,22 +1,22 @@
-"""`systemone run opendxp`: answer with a System One model on this machine, through OpenDXP.
+"""`systemone run noulxp`: answer with a System One model on this machine, through NoulXP.
 
-OpenDXP, the Open Decision Exchange Protocol (github.com/systemonemodels/opendxp),
+NoulXP, the open exchange protocol for decision models (github.com/systemonemodels/noulxp),
 packages a System One model so that one open runtime answers for it, with no
 code written for that model. This command:
 
 1. looks for the model on this machine first: a version already pulled into the
    cache is used as it is;
 2. otherwise pulls it from System One Models, only the checkpoint it needs;
-3. uses the version's OpenDXP package (an odxp.json at its root or in a folder),
-   or, for a model that has none yet but whose family OpenDXP converts (Laya,
+3. uses the version's NoulXP package (a noulxp.json at its root or in a folder),
+   or, for a model that has none yet but whose family NoulXP converts (Laya,
    Julia 1, Decider), builds one here from the model's own files, once;
-4. answers through the `opendxp` command, in a Python environment of its own, so
+4. answers through the `noulxp` command, in a Python environment of its own, so
    the CLI stays light and the runtime's libraries never meet yours.
 
 Layout, under the platform's data directory:
 
-    <data>/systemone/opendxp/venv                                   the runtime
-    <data>/systemone/opendxp/packages/<ns>--<name>/<version>/<checkpoint>   built here
+    <data>/systemone/noulxp/venv                                   the runtime
+    <data>/systemone/noulxp/packages/<ns>--<name>/<version>/<checkpoint>   built here
 """
 
 from __future__ import annotations
@@ -34,14 +34,18 @@ from typing import Any
 from systemone import cache, studio
 from systemone.errors import SystemOneError
 
-MANIFEST = "odxp.json"
+MANIFEST = "noulxp.json"
+# The manifest's name in packages made before the rename (OpenDXP, to 0.3.1).
+MANIFESTS = (MANIFEST, "odxp.json")
 MAIN = "main"
-# A local checkout or wheel of opendxp to install instead of the published one.
-ENV_SPEC = "SYSTEMONE_OPENDXP_SPEC"
-REQUIREMENT = ">=0.1,<0.2"
+# A local checkout or wheel of noulxp to install instead of the published one.
+ENV_SPEC = "SYSTEMONE_NOULXP_SPEC"
+# Its name before the rename, still read.
+LEGACY_ENV_SPEC = "SYSTEMONE_OPENDXP_SPEC"
+REQUIREMENT = ">=0.4,<0.5"
 LLAMA_WHEELS = "https://abetlen.github.io/llama-cpp-python/whl/{}"
 LLAMA = "llama-cpp-python==0.3.35"
-# Files that make a checkpoint of a family OpenDXP can convert, per family.
+# Files that make a checkpoint of a family NoulXP can convert, per family.
 FAMILIES = {
     "laya": ("rl_agent_config.json", "model.safetensors"),
     "julia": ("julia_config.json", "model.safetensors"),
@@ -76,12 +80,12 @@ Log = Callable[[str], None]
 
 @dataclass(frozen=True)
 class Checkpoint:
-    """One runnable model in a version: an OpenDXP package, or files OpenDXP converts."""
+    """One runnable model in a version: a NoulXP package, or files NoulXP converts."""
 
     name: str  # "main" for the version's root, else its folder
     folder: str  # "" for the root
-    package: bool  # an odxp.json is there
-    family: str | None  # a family OpenDXP converts, when there is no package
+    package: bool  # a noulxp.json is there
+    family: str | None  # a family NoulXP converts, when there is no package
 
 
 # Beyond FAMILIES' marker files, what each family's converter reads.
@@ -144,8 +148,8 @@ def parse_ref(ref: str) -> tuple[str, str | None]:
 def checkpoints(paths: Iterable[str]) -> list[Checkpoint]:
     """The runnable checkpoints in a version, from its file paths.
 
-    An OpenDXP package is a folder (or the root) with an odxp.json. Without one,
-    a folder (or the root) holding a family's files is a checkpoint OpenDXP can
+    A NoulXP package is a folder (or the root) with a noulxp.json. Without one,
+    a folder (or the root) holding a family's files is a checkpoint NoulXP can
     build a package from.
     """
     files = set(paths)
@@ -154,7 +158,7 @@ def checkpoints(paths: Iterable[str]) -> list[Checkpoint]:
     for folder in folders:
         prefix = f"{folder}/" if folder else ""
         name = folder or MAIN
-        if prefix + MANIFEST in files:
+        if any(prefix + m in files for m in MANIFESTS):
             found.append(Checkpoint(name, folder, package=True, family=None))
             continue
         for family, needed in FAMILIES.items():
@@ -172,8 +176,8 @@ def checkpoints(paths: Iterable[str]) -> list[Checkpoint]:
 def choose(found: list[Checkpoint], wanted: str | None) -> Checkpoint:
     if not found:
         raise SystemOneError(
-            "this version has no OpenDXP package, and none of its files is a model OpenDXP "
-            "can convert (Laya, Julia 1, Decider). Its maker can add one with `opendxp export`."
+            "this version has no NoulXP package, and none of its files is a model NoulXP "
+            "can convert (Laya, Julia 1, Decider). Its maker can add one with `noulxp export`."
         )
     if wanted:
         for checkpoint in found:
@@ -205,8 +209,8 @@ def has_checkpoint(root: Path, checkpoint: Checkpoint) -> bool:
     """Whether a snapshot holds everything this checkpoint needs, not just its name."""
     prefix = f"{checkpoint.folder}/" if checkpoint.folder else ""
     if checkpoint.package:
-        manifest = root / f"{prefix}{MANIFEST}"
-        if not manifest.is_file():
+        manifest = manifest_in(root / prefix)
+        if manifest is None:
             return False
         try:
             data = json.loads(manifest.read_text(encoding="utf-8"))
@@ -235,7 +239,7 @@ def _manifest_paths(data: dict[str, Any]) -> list[str]:
 
 
 def root_dir() -> Path:
-    return studio.data_dir() / "opendxp"
+    return studio.data_dir() / "noulxp"
 
 
 def env_dir() -> Path:
@@ -249,10 +253,10 @@ def package_dir(repo: str, version: str, checkpoint: str) -> Path:
 
 def _requirement(extras: Iterable[str]) -> str:
     joined = ",".join(sorted(extras))
-    source = os.environ.get(ENV_SPEC)
+    source = os.environ.get(ENV_SPEC) or os.environ.get(LEGACY_ENV_SPEC)
     if source:
         return f"{source}[{joined}]" if joined else source
-    return f"opendxp[{joined}]{REQUIREMENT}" if joined else f"opendxp{REQUIREMENT}"
+    return f"noulxp[{joined}]{REQUIREMENT}" if joined else f"noulxp{REQUIREMENT}"
 
 
 def _apple_silicon() -> bool:
@@ -297,9 +301,9 @@ def install_steps(venv: Path, needs: set[str], have: set[str], uv: str | None) -
 
 
 def ensure_runtime(needs: set[str], *, log: Log = print) -> Path:
-    """The `opendxp` command in its own environment, with the extras asked for."""
+    """The `noulxp` command in its own environment, with the extras asked for."""
     venv = env_dir()
-    stamp = venv / ".systemone-opendxp.json"
+    stamp = venv / ".systemone-noulxp.json"
     have: set[str] = set()
     if stamp.is_file():
         try:
@@ -310,7 +314,7 @@ def ensure_runtime(needs: set[str], *, log: Log = print) -> Path:
             have = set()
     uv = shutil.which("uv")
     if not studio._venv_bin(venv, "python").exists():
-        log("Creating the OpenDXP runtime's Python environment")
+        log("Creating the NoulXP runtime's Python environment")
         venv.parent.mkdir(parents=True, exist_ok=True)
         if uv:
             made = studio._run([uv, "venv", "--seed", "--python", "3.12", str(venv)])
@@ -318,7 +322,7 @@ def ensure_runtime(needs: set[str], *, log: Log = print) -> Path:
             base = studio._python_for_venv()
             if base is None:
                 raise SystemOneError(
-                    "OpenDXP needs Python 3.11 or newer. Install uv "
+                    "NoulXP needs Python 3.11 or newer. Install uv "
                     "(https://docs.astral.sh/uv/), which fetches one for you, or Python 3.11+."
                 )
             made = studio._run([base, "-m", "venv", str(venv)])
@@ -328,15 +332,15 @@ def ensure_runtime(needs: set[str], *, log: Log = print) -> Path:
     steps = install_steps(venv, needs, have, uv)
     if steps:
         heavy = " (the first conversion downloads PyTorch)" if "export" in needs - have else ""
-        log(f"Installing the OpenDXP runtime{heavy}")
+        log(f"Installing the NoulXP runtime{heavy}")
     for step in steps:
         done = subprocess.run(step, check=False)  # noqa: S603 - installers, no shell
         if done.returncode != 0:
-            raise SystemOneError("installing the OpenDXP runtime failed; see the output above")
+            raise SystemOneError("installing the NoulXP runtime failed; see the output above")
     stamp.write_text(
         json.dumps({"source": _requirement([]), "extras": sorted(have | needs | {"base"})})
     )
-    return studio._venv_bin(venv, "opendxp")
+    return studio._venv_bin(venv, "noulxp")
 
 
 def needs_for(checkpoint: Checkpoint, profile: str | None) -> set[str]:
@@ -351,25 +355,33 @@ def needs_for(checkpoint: Checkpoint, profile: str | None) -> set[str]:
     return needs
 
 
+def manifest_in(package: Path) -> Path | None:
+    """A package's manifest: noulxp.json, or odxp.json from before the rename."""
+    return next((package / m for m in MANIFESTS if (package / m).is_file()), None)
+
+
 def profile_of(package: Path) -> str | None:
+    manifest = manifest_in(package)
+    if manifest is None:
+        return None
     try:
-        return str(json.loads((package / MANIFEST).read_text(encoding="utf-8"))["profile"])
+        return str(json.loads(manifest.read_text(encoding="utf-8"))["profile"])
     except (OSError, KeyError, json.JSONDecodeError):
         return None
 
 
 def build_package(
-    opendxp: Path, family: str, source: Path, out: Path, name: str, *, log: Log = print
+    noulxp: Path, family: str, source: Path, out: Path, name: str, *, log: Log = print
 ) -> Path:
-    """An OpenDXP package from a checkpoint's own files, built once and kept."""
-    if (out / MANIFEST).is_file():
+    """A NoulXP package from a checkpoint's own files, built once and kept."""
+    if manifest_in(out) is not None:
         return out
-    log(f"Building an OpenDXP package from the {family} checkpoint (once)")
+    log(f"Building a NoulXP package from the {family} checkpoint (once)")
     out.parent.mkdir(parents=True, exist_ok=True)
     staging = out.with_name(out.name + ".partial")
     shutil.rmtree(staging, ignore_errors=True)
-    done = subprocess.run(  # noqa: S603 - the environment's own opendxp, no shell
-        [str(opendxp), "export", family, str(source), str(staging), "--name", name],
+    done = subprocess.run(  # noqa: S603 - the environment's own noulxp, no shell
+        [str(noulxp), "export", family, str(source), str(staging), "--name", name],
         capture_output=True,
         text=True,
         check=False,
@@ -377,28 +389,28 @@ def build_package(
     if done.returncode != 0:
         shutil.rmtree(staging, ignore_errors=True)
         detail = (done.stderr or done.stdout).strip().splitlines()[-3:]
-        raise SystemOneError("building the OpenDXP package failed: " + " ".join(detail))
+        raise SystemOneError("building the NoulXP package failed: " + " ".join(detail))
     shutil.rmtree(out, ignore_errors=True)
     staging.rename(out)
     return out
 
 
 def answer(
-    opendxp: Path, package: Path, request: dict[str, Any], *, device: str, threads: int | None
+    noulxp: Path, package: Path, request: dict[str, Any], *, device: str, threads: int | None
 ) -> dict[str, Any]:
-    command = [str(opendxp), "run", str(package), "--request", "-", "--device", device]
+    command = [str(noulxp), "run", str(package), "--request", "-", "--device", device]
     if threads:
         command += ["--threads", str(threads)]
-    done = subprocess.run(  # noqa: S603 - the environment's own opendxp, no shell
+    done = subprocess.run(  # noqa: S603 - the environment's own noulxp, no shell
         command, input=json.dumps(request), capture_output=True, text=True, check=False
     )
     if done.returncode != 0:
         detail = (done.stderr or done.stdout).strip().splitlines()[-3:]
-        raise SystemOneError("the OpenDXP runtime failed: " + " ".join(detail))
+        raise SystemOneError("the NoulXP runtime failed: " + " ".join(detail))
     try:
         result: dict[str, Any] = json.loads(done.stdout)
     except json.JSONDecodeError as exc:
-        raise SystemOneError(f"the OpenDXP runtime gave no JSON: {done.stdout[-200:]}") from exc
+        raise SystemOneError(f"the NoulXP runtime gave no JSON: {done.stdout[-200:]}") from exc
     return result
 
 

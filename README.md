@@ -112,21 +112,22 @@ systemone system --json   # the same, for scripts
 ## Run a model on this machine
 
 ```bash
-systemone run opendxp convai-innovations/laya --checkpoint typed-decisions
-systemone run opendxp convai-innovations/laya --state "Customer: where is my parcel?" \
+systemone run noulxp convai-innovations/laya --checkpoint typed-decisions
+systemone run noulxp convai-innovations/laya --state "Customer: where is my parcel?" \
     --questions '{"intent": {"type": "choice", "instructions": "What does the customer want?",
                               "criteria": ["refund", "track delivery", "cancel order"]}}'
-systemone run opendxp ./my-package --request request.json --json
+systemone run noulxp ./my-package --request request.json --json
 ```
 
-Runs the model through [OpenDXP](https://github.com/systemonemodels/opendxp), the
+Runs the model through [NoulXP](https://github.com/systemonemodels/noulxp), the
 open standard that lets one runtime answer for any System One model. A model you
 pulled before is used as it is; otherwise only the checkpoint you asked for is
-downloaded. A model with no OpenDXP package yet, from a family OpenDXP converts
+downloaded. A model with no NoulXP package yet, from a family NoulXP converts
 (Laya, Julia 1, Decider), gets one built once on this machine. The runtime gets a
 Python environment of its own (the first conversion downloads PyTorch).
 `--device` picks a backend (`cpu`, `cuda`, `coreml`, ...); the default uses CUDA
-when it can and the CPU otherwise.
+when it can and the CPU otherwise. NoulXP was called OpenDXP until 0.3.1, and
+`systemone run opendxp` still works.
 
 ## Fine-tune locally with System One Studio
 

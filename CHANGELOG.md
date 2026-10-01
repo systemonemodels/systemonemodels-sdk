@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.1
+
+- Fixed: `systemone pull` of a version that ships its own `systemone.yaml`
+  (sagea/mira 0.1.4, for one) downloaded every file and then failed with
+  `PermissionError`. The version's own file is kept: it is the one its file
+  list describes. A version that ships none still gets the registry's manifest,
+  now written in place of whatever is at that path rather than through it, so a
+  cached file other models share can never be changed.
+
 ## 0.5.0
 
 - `systemone run noulxp`: OpenDXP, the standard it runs models through, is now

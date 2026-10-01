@@ -22,6 +22,8 @@ from systemone.inspect import walk
 Progress = Callable[[str, int, int, bool], None]
 """(path, bytes done, bytes total, deduplicated)"""
 
+MANIFEST = "systemone.yaml"
+
 
 def _read(
     path: Path, offset: int, length: int, on_bytes: Callable[[int], None] | None
@@ -185,6 +187,15 @@ def pull_version(
         keep = select([a.get("path") or a["filename"] for a in artifacts])
         artifacts = [a for a in artifacts if (a.get("path") or a["filename"]) in keep]
 
+    # A version may ship its own systemone.yaml: the publisher's file, which its
+    # listed digest describes. It comes with every pull, a variant or a selection
+    # too, as the registry's manifest does for a version that ships none.
+    shipped = next(
+        (a for a in selected["artifacts"] if (a.get("path") or a["filename"]) == MANIFEST), None
+    )
+    if shipped is not None and shipped not in artifacts:
+        artifacts = [*artifacts, shipped]
+
     snapshot = cache.snapshot_root(repo, wanted)
     result = PullResult(root=snapshot, files=len(artifacts))
 
@@ -218,8 +229,8 @@ def pull_version(
         if on_progress:
             on_progress(relative, size, len(artifacts), cached)
 
-    if manifest := detail.get("manifest_yaml"):
-        (snapshot / "systemone.yaml").write_text(manifest)
+    if shipped is None and (manifest := detail.get("manifest_yaml")):
+        cache.write_text(snapshot / MANIFEST, manifest)
     cache.write_ref(repo, wanted)
 
     if destination is not None:
@@ -227,7 +238,7 @@ def pull_version(
         for source in snapshot.rglob("*"):
             if source.is_file() or source.is_symlink():
                 relative_path = source.relative_to(snapshot)
-                if variant and relative_path.parts[0] not in (variant.strip("/"), "systemone.yaml"):
+                if variant and relative_path.parts[0] not in (variant.strip("/"), MANIFEST):
                     continue
                 cache.link(source.resolve(), root / relative_path)
         result.root = root

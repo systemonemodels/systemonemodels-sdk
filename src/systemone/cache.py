@@ -100,6 +100,21 @@ def link(blob: Path, target: Path) -> None:
     shutil.copyfile(blob, target)
 
 
+def write_text(target: Path, text: str) -> None:
+    """Write a file inside a snapshot by replacing its directory entry.
+
+    The path may already be a link into the blob store, left by an earlier
+    pull. Opening it for writing would change a blob that every snapshot
+    shares, so the text goes to a new file that takes the path's place.
+    """
+    target.parent.mkdir(parents=True, exist_ok=True)
+    staging = target.with_name(target.name + ".incoming")
+    if staging.exists() or staging.is_symlink():
+        staging.unlink()
+    staging.write_text(text)
+    os.replace(staging, target)
+
+
 def write_ref(repo: str, version: str, ref: str = "latest") -> None:
     path = ref_path(repo, ref)
     path.parent.mkdir(parents=True, exist_ok=True)

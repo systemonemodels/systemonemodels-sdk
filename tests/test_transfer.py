@@ -1,17 +1,19 @@
-"""Uploads stream from disk and report progress as bytes leave."""
+"""Uploads stream from disk and report progress as bytes leave; pulls build snapshots."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+import hashlib
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
 
+from systemone import cache
 from systemone.client import Client
 from systemone.config import Config
-from systemone.transfer import push_files
+from systemone.transfer import pull_version, push_files
 
 
 def test_a_streamed_put_declares_its_length(
@@ -121,3 +123,103 @@ def test_multipart_uploads_send_each_range(tmp_path: Path) -> None:
 
     assert storage.puts == [b"0123", b"4567", b"89"]
     assert sum(reported) == 10
+
+
+# ---- pulls --------------------------------------------------------------------------
+
+SHIPPED = b'spec_version: "0.1"\nmodel: mira\nnamespace: sagea\n'
+REGISTRY = "spec_version: '0.1'\nmodel: mira\nnamespace: sagea\nartifacts: []\n"
+
+
+class Registry:
+    """Enough of the registry for pull_version: one version, its files served from memory."""
+
+    def __init__(self, files: dict[str, bytes], manifest: str | None = REGISTRY) -> None:
+        self.files = files
+        self.manifest = manifest
+        self.downloads: list[str] = []
+
+    def model(self, repo: str) -> dict[str, Any]:
+        return {"latest_version": "0.1.4", "manifest_yaml": self.manifest}
+
+    def versions(self, repo: str) -> list[dict[str, Any]]:
+        artifacts = [
+            {
+                "uri": f"https://bucket.test/{path}",
+                "path": path,
+                "filename": path.rsplit("/", 1)[-1],
+                "size_bytes": len(data),
+                "sha256": hashlib.sha256(data).hexdigest(),
+            }
+            for path, data in self.files.items()
+        ]
+        return [{"version": "0.1.4", "artifacts": artifacts}]
+
+    def download(self, url: str, target: Path, expected_sha256: str | None = None) -> Iterator[int]:
+        path = url.removeprefix("https://bucket.test/")
+        self.downloads.append(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(self.files[path])
+        yield len(self.files[path])
+
+
+@pytest.fixture()
+def isolated_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setenv("SYSTEMONE_CACHE", str(tmp_path / "cache"))
+    return tmp_path
+
+
+def test_a_version_that_ships_its_manifest_keeps_it(isolated_cache: Path) -> None:
+    """sagea/mira 0.1.4 ships systemone.yaml. Writing the registry's manifest over it went
+    through the snapshot's link into the read-only blob and failed; had the blob been
+    writable, it would have changed the bytes every snapshot shares."""
+    registry = Registry({"systemone.yaml": SHIPPED, "model.safetensors": b"weights"})
+    digest = hashlib.sha256(SHIPPED).hexdigest()
+
+    for _ in range(2):  # the second pull comes from the cache
+        result = pull_version(registry, "sagea/mira", isolated_cache / "out")  # type: ignore[arg-type]
+
+    snapshot = cache.snapshot_root("sagea/mira", "0.1.4")
+    assert (snapshot / "systemone.yaml").read_bytes() == SHIPPED
+    assert (result.root / "systemone.yaml").read_bytes() == SHIPPED
+    assert (result.root / "model.safetensors").read_bytes() == b"weights"
+    assert cache.has_blob(digest)
+    assert registry.downloads == ["systemone.yaml", "model.safetensors"]
+
+
+def test_a_version_without_one_gets_the_registry_manifest(isolated_cache: Path) -> None:
+    registry = Registry({"model.safetensors": b"weights"})
+    result = pull_version(registry, "me/x", isolated_cache / "out")  # type: ignore[arg-type]
+    snapshot = cache.snapshot_root("me/x", "0.1.4")
+    assert (snapshot / "systemone.yaml").read_text() == REGISTRY
+    assert (result.root / "systemone.yaml").read_text() == REGISTRY
+
+
+def test_the_manifest_is_written_in_place_of_a_link_not_through_it(isolated_cache: Path) -> None:
+    """A link left at the manifest's path is replaced; the blob behind it is untouched."""
+    shared = b"a file other snapshots share"
+    digest = hashlib.sha256(shared).hexdigest()
+    staging = cache.blob_path(digest).with_suffix(".incoming")
+    staging.parent.mkdir(parents=True, exist_ok=True)
+    staging.write_bytes(shared)
+    blob = cache.adopt(staging, digest)
+    blob.chmod(0o644)  # even a writable blob must not be written through
+    snapshot = cache.snapshot_root("me/x", "0.1.4")
+    cache.link(blob, snapshot / "systemone.yaml")
+
+    pull_version(Registry({"model.safetensors": b"weights"}), "me/x")  # type: ignore[arg-type]
+
+    assert (snapshot / "systemone.yaml").read_text() == REGISTRY
+    assert blob.read_bytes() == shared and cache.has_blob(digest)
+
+
+def test_a_variant_pull_brings_the_shipped_manifest(isolated_cache: Path) -> None:
+    registry = Registry(
+        {"systemone.yaml": SHIPPED, "onnx/model.onnx": b"graph", "gguf/model.gguf": b"gguf"}
+    )
+    out = isolated_cache / "out"
+    result = pull_version(registry, "me/x", out, variant="onnx")  # type: ignore[arg-type]
+    files = sorted(p.relative_to(result.root).as_posix() for p in result.root.rglob("*"))
+    assert files == ["onnx", "onnx/model.onnx", "systemone.yaml"]
+    assert (result.root / "systemone.yaml").read_bytes() == SHIPPED
+    assert "gguf/model.gguf" not in registry.downloads

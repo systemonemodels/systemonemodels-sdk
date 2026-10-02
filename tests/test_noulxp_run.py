@@ -53,7 +53,7 @@ def plain(text: str) -> str:
 def test_model_references() -> None:
     assert noulxp_run.parse_ref("Convai-Innovations/Laya") == ("convai-innovations/laya", None)
     assert noulxp_run.parse_ref("mapika/decider@v11") == ("mapika/decider", "v11")
-    assert noulxp_run.parse_ref("https://systemonemodels.tech/supersonic-labs/julia-1") == (
+    assert noulxp_run.parse_ref("https://systemonemodels.ai/supersonic-labs/julia-1") == (
         "supersonic-labs/julia-1",
         None,
     )

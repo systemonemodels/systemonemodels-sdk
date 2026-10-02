@@ -5,7 +5,7 @@
 [![CI](https://github.com/systemonemodels/systemonemodels-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/systemonemodels/systemonemodels-sdk/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-The command line and Python client for [System One](https://systemonemodels.tech),
+The command line and Python client for [System One](https://systemonemodels.ai),
 the registry for **decision models** — models that return a typed decision with
 a calibrated confidence instead of generated text: choose, score, rank,
 classify, route.
@@ -28,7 +28,7 @@ approve this machine. Over SSH, open the printed address on any device instead.
 For CI, skip the browser:
 
 ```bash
-export SYSTEMONE_TOKEN=s1_pat_...   # create one at systemonemodels.tech/settings/tokens
+export SYSTEMONE_TOKEN=s1_pat_...   # create one at systemonemodels.ai/settings/tokens
 systemone whoami
 ```
 
@@ -158,7 +158,7 @@ the managed copy.
 
 Models with a live playground on System One Models can be called from your own
 code. Create an API key at
-[Settings → API](https://systemonemodels.tech/settings/api); each question a
+[Settings → API](https://systemonemodels.ai/settings/api); each question a
 model answers is one decision of your plan (the free plan has 500 a day).
 
 ```python
@@ -190,7 +190,7 @@ systemone decide nokia/anyjev --state "Customer: where is my parcel?" \
 `client.served_models()` lists what can be called and `client.usage()` what is
 left of your plan. Over a limit, `decide` raises `RateLimited` with
 `retry_after` in seconds. The request and answer format is in the
-[Inference API docs](https://systemonemodels.tech/docs/inference).
+[Inference API docs](https://systemonemodels.ai/docs/inference).
 
 ## In Python
 
@@ -236,13 +236,13 @@ Issues and pull requests are welcome. For anything security-related, see
 
 ## Links
 
-- Registry: <https://systemonemodels.tech/models>
-- CLI guide: <https://systemonemodels.tech/docs/sdk>
-- Manifest specification: <https://systemonemodels.tech/docs/manifest>
+- Registry: <https://systemonemodels.ai/models>
+- CLI guide: <https://systemonemodels.ai/docs/sdk>
+- Manifest specification: <https://systemonemodels.ai/docs/manifest>
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
-- Every System One model, compared: <https://systemonemodels.tech/system-one-models>
+- Every System One model, compared: <https://systemonemodels.ai/system-one-models>
 - System One Studio (formerly Laya Studio): <https://github.com/biplovgautam/LayaStudio>
-- System One Models on [LinkedIn](https://www.linkedin.com/company/system-one-models/), [X](https://x.com/SystemoneModels), [Hugging Face](https://huggingface.co/systemonemodels) and [Instagram](https://www.instagram.com/systemonemodels.tech/)
-- Contact: ceo@systemonemodels.tech
+- System One Models on [LinkedIn](https://www.linkedin.com/company/system-one-models/), [X](https://x.com/SystemoneModels), [Hugging Face](https://huggingface.co/systemonemodels) and [Instagram](https://www.instagram.com/systemonemodels.ai/)
+- Contact: ceo@systemonemodels.ai
 
 Licensed under [Apache-2.0](LICENSE).

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0
+
+- System One Models moved to systemonemodels.ai. The CLI and `Client` now call
+  `https://api.systemonemodels.ai` by default, and links it prints point at
+  systemonemodels.ai. A login saved by an earlier version, or a
+  `SYSTEMONE_ENDPOINT` still naming `https://api.systemonemodels.tech`, is read
+  as the new address, so nobody has to log in again. The former address keeps
+  answering for a while, then stops: earlier versions need this update.
+
 ## 0.5.1
 
 - Fixed: `systemone pull` of a version that ships its own `systemone.yaml`

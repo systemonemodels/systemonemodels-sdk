@@ -29,7 +29,7 @@ from systemone.errors import (
 
 # Cloudflare rejects the default library user agents on r2.dev as bot traffic,
 # with a 403 that reads exactly like a permissions error. Identify properly.
-USER_AGENT = f"systemone/{__version__} (+https://systemonemodels.tech)"
+USER_AGENT = f"systemone/{__version__} (+https://systemonemodels.ai)"
 
 CHUNK = 1024 * 1024
 

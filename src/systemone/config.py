@@ -14,7 +14,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 APP_NAME = "systemone"
-DEFAULT_ENDPOINT = "https://api.systemonemodels.tech"
+DEFAULT_ENDPOINT = "https://api.systemonemodels.ai"
+# The API's former address, and where it went: a login stored by an older version,
+# or a SYSTEMONE_ENDPOINT still naming it, is read as the new one.
+MOVED = {"https://api.systemonemodels.tech": DEFAULT_ENDPOINT}
 ENV_TOKEN = "SYSTEMONE_TOKEN"  # noqa: S105 - the variable name, not a token
 ENV_ENDPOINT = "SYSTEMONE_ENDPOINT"
 # An API key for calling models (Client.decide); registry calls never use it.
@@ -24,7 +27,7 @@ ENV_API_KEY = "SYSTEMONE_API_KEY"  # noqa: S105 - the variable name, not a key
 def web_url(endpoint: str) -> str:
     """The website that goes with an API endpoint, for printing links.
 
-    api.systemonemodels.tech -> systemonemodels.tech, and dev-api.X -> dev.X.
+    api.systemonemodels.ai -> systemonemodels.ai, and dev-api.X -> dev.X.
     Anything else — a self-hosted registry, localhost — is returned unchanged
     rather than guessed at.
     """
@@ -91,15 +94,20 @@ def load(environment: bool = True) -> Config:
             pass
 
     if not environment:
-        config.endpoint = config.endpoint.rstrip("/")
+        config.endpoint = _current(config.endpoint)
         return config
 
     # `or`, not a default argument: an exported-but-empty variable, which is
     # what `export SYSTEMONE_TOKEN=` in a CI template leaves behind, must fall
     # back to the stored value rather than blank it out.
-    config.endpoint = (os.environ.get(ENV_ENDPOINT) or config.endpoint).rstrip("/")
+    config.endpoint = _current(os.environ.get(ENV_ENDPOINT) or config.endpoint)
     config.token = os.environ.get(ENV_TOKEN) or config.token or None
     return config
+
+
+def _current(endpoint: str) -> str:
+    endpoint = endpoint.rstrip("/")
+    return MOVED.get(endpoint, endpoint)
 
 
 def save(config: Config) -> Path:

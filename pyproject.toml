@@ -3,7 +3,7 @@
 # PyPI compares names with separators removed, so "systemone" collides with an
 # unrelated existing project, "system-one".
 name = "systemonemodels"
-version = "0.5.1"
+version = "0.6.0"
 description = "Command line and Python client for System One — the registry for decision models"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -44,8 +44,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://systemonemodels.tech"
-Documentation = "https://systemonemodels.tech/docs/sdk"
+Homepage = "https://systemonemodels.ai"
+Documentation = "https://systemonemodels.ai/docs/sdk"
 Source = "https://github.com/systemonemodels/systemonemodels-sdk"
 Issues = "https://github.com/systemonemodels/systemonemodels-sdk/issues"
 Changelog = "https://github.com/systemonemodels/systemonemodels-sdk/blob/main/CHANGELOG.md"

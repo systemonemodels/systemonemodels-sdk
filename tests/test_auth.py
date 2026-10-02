@@ -16,8 +16,8 @@ from systemone.errors import LoginFailed
 CODES: dict[str, Any] = {
     "device_code": "secret-device-code",
     "user_code": "BCDF-GHJK",
-    "verification_uri": "https://systemonemodels.tech/device",
-    "verification_uri_complete": "https://systemonemodels.tech/device?code=BCDF-GHJK",
+    "verification_uri": "https://systemonemodels.ai/device",
+    "verification_uri_complete": "https://systemonemodels.ai/device?code=BCDF-GHJK",
     "expires_in": 600,
     "interval": 5,
 }

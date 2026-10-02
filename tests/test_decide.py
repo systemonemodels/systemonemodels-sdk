@@ -122,8 +122,8 @@ def test_without_any_key_it_says_where_to_get_one() -> None:
         raise AssertionError("no request should be sent")
 
     client = served(never)
-    client.config.endpoint = "https://api.systemonemodels.tech"
-    with pytest.raises(AuthError, match=r"systemonemodels\.tech/settings/api"):
+    client.config.endpoint = "https://api.systemonemodels.ai"
+    with pytest.raises(AuthError, match=r"systemonemodels\.ai/settings/api"):
         client.decide("nokia/anyjev", "state", QUESTIONS)
 
 

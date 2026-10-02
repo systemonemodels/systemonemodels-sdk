@@ -61,7 +61,7 @@ def test_logout_removes_the_file() -> None:
 def test_web_url_follows_the_api_host() -> None:
     from systemone.config import web_url
 
-    assert web_url("https://api.systemonemodels.tech") == "https://systemonemodels.tech"
+    assert web_url("https://api.systemonemodels.ai") == "https://systemonemodels.ai"
     assert web_url("https://dev-api.systemonemodels.tech") == "https://dev.systemonemodels.tech"
     assert web_url("http://127.0.0.1:8000") == "http://127.0.0.1:8000"
 
@@ -77,3 +77,23 @@ def test_empty_environment_variables_do_not_blank_the_stored_values(
     loaded = config.load()
     assert loaded.token == "s1_pat_stored"
     assert loaded.endpoint == "https://api.example.test"
+
+
+def test_a_login_stored_for_the_former_address_reads_as_the_new_one(tmp_path, monkeypatch) -> None:
+    import json
+
+    from systemone import config
+
+    monkeypatch.setenv("SYSTEMONE_HOME", str(tmp_path))
+    monkeypatch.delenv("SYSTEMONE_ENDPOINT", raising=False)
+    (tmp_path / "config.json").write_text(
+        json.dumps({"endpoint": "https://api.systemonemodels.tech/", "token": "s1_pat_x"})
+    )
+    assert config.load().endpoint == "https://api.systemonemodels.ai"
+    assert config.load(environment=False).endpoint == "https://api.systemonemodels.ai"
+
+    monkeypatch.setenv("SYSTEMONE_ENDPOINT", "https://api.systemonemodels.tech")
+    assert config.load().endpoint == "https://api.systemonemodels.ai"
+    # Anything else is left as it is.
+    monkeypatch.setenv("SYSTEMONE_ENDPOINT", "http://localhost:8000")
+    assert config.load().endpoint == "http://localhost:8000"

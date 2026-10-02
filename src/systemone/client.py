@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import sys
 from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Any
@@ -111,6 +112,7 @@ class Client:
                 "or SYSTEMONE_ENDPOINT."
             ) from exc
 
+        _notice(response)
         if response.status_code == 401:
             if auth_error is not None:
                 raise AuthError(_detail(response) or auth_error)
@@ -401,6 +403,19 @@ def _json(response: httpx.Response) -> Any:
         return response.json() if response.content else None
     except ValueError:
         return None
+
+
+# A message the registry attaches to its answers, such as "this version of the CLI is
+# out of date": shown once per run, on stderr so it never mixes with a command's output.
+NOTICE_HEADER = "x-systemone-notice"
+_shown_notices: set[str] = set()
+
+
+def _notice(response: httpx.Response) -> None:
+    text = response.headers.get(NOTICE_HEADER, "").strip()
+    if text and text not in _shown_notices:
+        _shown_notices.add(text)
+        print(f"systemone: {text}", file=sys.stderr)
 
 
 def _detail(response: httpx.Response) -> str | None:

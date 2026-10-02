@@ -8,6 +8,9 @@
   `SYSTEMONE_ENDPOINT` still naming `https://api.systemonemodels.tech`, is read
   as the new address, so nobody has to log in again. The former address keeps
   answering for a while, then stops: earlier versions need this update.
+- The CLI shows a notice the registry sends with an answer (for example that a
+  version is out of date), once per run and on stderr, so later moves and
+  upgrades can be announced where people see them.
 
 ## 0.5.1
 

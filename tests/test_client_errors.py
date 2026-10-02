@@ -52,3 +52,21 @@ def test_failed_download_leaves_no_partial_file(
         list(Client(Config(endpoint="https://api.test")).download("https://files.test/x", target))
     assert not target.exists()
     assert not target.with_suffix(".onnx.part").exists()
+
+
+def test_a_notice_from_the_registry_is_shown_once(capsys: pytest.CaptureFixture[str]) -> None:
+    from systemone import client as client_module
+
+    client_module._shown_notices.clear()
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"items": []}, headers={"x-systemone-notice": "Update the CLI."}
+        )
+
+    client = client_that(httpx.MockTransport(answer))
+    client.search("routing")
+    client.search("triage")
+    captured = capsys.readouterr()
+    assert captured.err.count("systemone: Update the CLI.") == 1
+    assert "Update" not in captured.out

@@ -79,7 +79,9 @@ def test_empty_environment_variables_do_not_blank_the_stored_values(
     assert loaded.endpoint == "https://api.example.test"
 
 
-def test_a_login_stored_for_the_former_address_reads_as_the_new_one(tmp_path, monkeypatch) -> None:
+def test_a_login_stored_for_the_former_address_reads_as_the_new_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     import json
 
     from systemone import config

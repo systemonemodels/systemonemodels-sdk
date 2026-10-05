@@ -58,3 +58,9 @@ class RateLimited(ApiError):
     ):
         super().__init__(status, detail, code, errors)
         self.retry_after = retry_after
+
+
+class CreditsRequired(ApiError):
+    """The model runs on GPUs, which are paid from prepaid credit, and the account has
+    none left (HTTP 402, code `credits_required`). Add credits in Settings → Billing;
+    models on the CPU servers stay free within the plan's decisions."""

@@ -23,6 +23,7 @@ from systemone.errors import (
     AuthError,
     ChecksumMismatch,
     ConnectionFailed,
+    CreditsRequired,
     NotFound,
     RateLimited,
     SystemOneError,
@@ -128,6 +129,14 @@ class Client:
                 payload.get("errors", []),
                 retry_after=_seconds(response.headers.get("retry-after")),
             )
+        if response.status_code == 402:
+            payload = _json(response) or {}
+            raise CreditsRequired(
+                402,
+                payload.get("detail", "This model needs prepaid credit: Settings → Billing."),
+                payload.get("code", "credits_required"),
+                payload.get("errors", []),
+            )
         if response.status_code >= 400:
             payload = _json(response) or {}
             raise ApiError(
@@ -217,7 +226,8 @@ class Client:
         score or noul), `instructions`, and `criteria` (choice: the options, as
         a list or {option: description}; score: the levels, lowest first; noul:
         nothing). The answer has `answers` by question id, `usage` and
-        `latency_ms`. Raises RateLimited when over a limit or out of decisions.
+        `latency_ms`. Raises RateLimited when over a limit or out of decisions, and
+        CreditsRequired when the model runs on GPUs and the account has no credit.
         """
         body: dict[str, Any] = {
             "model": model,

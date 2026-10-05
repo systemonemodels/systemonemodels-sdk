@@ -13,7 +13,7 @@ from typer.testing import CliRunner
 from systemone import cli
 from systemone.client import Client
 from systemone.config import Config
-from systemone.errors import AuthError, NotFound, RateLimited
+from systemone.errors import ApiError, AuthError, CreditsRequired, NotFound, RateLimited
 
 runner = CliRunner()
 
@@ -140,6 +140,39 @@ def test_limits_raise_rate_limited_with_the_wait() -> None:
     assert caught.value.code == "quota_exceeded"
     assert caught.value.retry_after == 42.0
     assert caught.value.status == 429
+
+
+def test_a_gpu_model_without_credit_raises_credits_required() -> None:
+    detail = (
+        "acme/big runs on GPUs, which are paid from prepaid credit, and your account has "
+        "none. Add credits in Settings → Billing: https://web.test/settings/billing."
+    )
+
+    def broke(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(402, json={"detail": detail, "code": "credits_required"})
+
+    with pytest.raises(CreditsRequired, match="Settings → Billing") as caught:
+        served(broke, api_key="k").decide("acme/big", "state", QUESTIONS)
+    assert caught.value.status == 402
+    assert caught.value.code == "credits_required"
+    # Code that already catches ApiError keeps working.
+    assert isinstance(caught.value, ApiError)
+
+
+def test_the_decide_command_says_where_to_add_credit(monkeypatch: pytest.MonkeyPatch) -> None:
+    def broke(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            402,
+            json={
+                "detail": "Add credits in Settings → Billing: https://web.test/settings/billing.",
+                "code": "credits_required",
+            },
+        )
+
+    monkeypatch.setattr(cli, "client", lambda: served(broke, api_key="k"))
+    result = runner.invoke(cli.app, ["decide", "acme/big"])
+    assert result.exit_code == 1
+    assert "https://web.test/settings/billing" in plain(result.output)
 
 
 def test_a_refused_key_and_an_unknown_model_are_explained() -> None:

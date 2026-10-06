@@ -1,0 +1,11 @@
+# The workflows pin every action by commit. Dependabot proposes newer
+# versions, SHA and comment together, in one pull request a month.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]

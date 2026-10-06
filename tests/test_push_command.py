@@ -177,6 +177,35 @@ def test_an_existing_repository_gets_the_next_version(workspace: Path, registry:
     assert registry.published[0]["version"] == "0.2.0"
 
 
+def test_a_version_that_exists_stops_before_any_upload(
+    workspace: Path, registry: Registry, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry.existing["me/snake-balanced"] = ["0.1.0", "0.2.0"]
+    uploads: list[str] = []
+
+    def push_files(registry: Any, repo: str, *args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        uploads.append(repo)
+        return fake_push_files(registry, repo, *args, **kwargs)
+
+    monkeypatch.setattr(cli, "push_files", push_files)
+    model = str(run_model(workspace))
+    refused = runner.invoke(cli.app, ["push", model, "--version", "0.1.0", "--yes"])
+
+    assert refused.exit_code == 1
+    flat = " ".join(re.sub(r"\x1b\[[0-9;]*m", "", refused.output).split())
+    assert "me/snake-balanced@0.1.0 is already published" in flat
+    assert "Pass another --version" in flat
+    # Refused before a single file is hashed or uploaded.
+    assert uploads == []
+    assert registry.created == [] and registry.published == []
+
+    # A version the repository does not have yet goes through as before.
+    published = runner.invoke(cli.app, ["push", model, "--version", "0.2.1", "--yes"])
+    assert published.exit_code == 0, published.output
+    assert uploads == ["me/snake-balanced"]
+    assert registry.published[0]["version"] == "0.2.1"
+
+
 def test_a_dry_run_sends_nothing(workspace: Path, registry: Registry) -> None:
     result = runner.invoke(cli.app, ["push", str(workspace), "--all", "--dry-run"])
     assert result.exit_code == 0, result.output

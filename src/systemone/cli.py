@@ -1017,6 +1017,14 @@ def push(
             existing = _existing_versions(registry, release.repo, lenient=dry_run)
             release.exists = existing is not None
             release.version = version or next_version(existing or [])
+            if existing and release.version in existing:
+                # Versions are immutable: say so before hashing and uploading every file
+                # again (each upload, even a deduplicated one, is a completed upload session
+                # counted against the namespace's storage) only to be refused at the end.
+                fail(
+                    f"{release.repo}@{release.version} is already published, and versions "
+                    "cannot be replaced. Pass another --version."
+                )
 
         documents: list[tuple[Release, str, str, bool]] = []
         for release in plan:

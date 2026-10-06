@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased (0.7.1)
+
+- Fixed: `systemone push --version X` for a version the repository already
+  has hashed and uploaded every file, then was refused at the end (versions
+  cannot be replaced). It now stops before uploading anything and asks for
+  another `--version`.
+
 ## 0.7.0
 
 - **`CreditsRequired`** (an `ApiError`) when the inference API answers 402

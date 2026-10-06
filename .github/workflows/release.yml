@@ -1,6 +1,12 @@
 name: release
 
 # Publishes to PyPI when a version tag like v0.1.0 is pushed. See RELEASING.md.
+#
+# The jobs are split by what they trust. build makes dist/ from the tagged
+# source with nothing but uv and the pinned build backend, and records its
+# digest. test and check run third-party code (pytest and its plugins, twine,
+# the wheel's dependencies) on runners of their own. publish, the one job PyPI
+# trusts, runs only pypa's action, and only on files whose digest is build's.
 
 on:
   push:
@@ -19,12 +25,18 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.digest.outputs.digest }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           version: ${{ env.PINNED_UV }}
           checksum: ${{ env.PINNED_UV_SHA256 }}
+          # Nothing in a release comes from a cache another run saved.
+          enable-cache: false
 
       # A tag that disagrees with the package version would publish a release
       # whose name lies about its contents, and PyPI never lets a version be
@@ -39,14 +51,52 @@ jobs:
             exit 1
           fi
 
+      # The build backend at fixed versions, checked against their hashes.
+      - run: uv build -b .github/build-constraints.txt --require-hashes
+
+      - name: Digest of the files to publish
+        id: digest
+        run: echo "digest=$(cd dist && sha256sum * | sha256sum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dist
+          path: dist/
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          version: ${{ env.PINNED_UV }}
+          checksum: ${{ env.PINNED_UV_SHA256 }}
+          # Nothing in a release comes from a cache another run saved.
+          enable-cache: false
+
       - name: Test on the oldest and newest supported Python
         run: |
           for py in 3.10 3.13; do
             uv run --python "$py" --locked pytest -q
           done
 
-      # The build backend at fixed versions, checked against their hashes.
-      - run: uv build -b .github/build-constraints.txt --require-hashes
+  check:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: dist
+          path: dist/
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          version: ${{ env.PINNED_UV }}
+          checksum: ${{ env.PINNED_UV_SHA256 }}
+          # Nothing in a release comes from a cache another run saved.
+          enable-cache: false
+
       - run: uvx twine==7.0.0 check --strict dist/*
 
       - name: The wheel installs and runs in a clean environment
@@ -55,13 +105,8 @@ jobs:
           /tmp/check/bin/pip install dist/*.whl
           /tmp/check/bin/systemone version
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: dist
-          path: dist/
-
   publish:
-    needs: build
+    needs: [build, test, check]
     runs-on: ubuntu-latest
     # Bound to the PyPI trusted publisher, and gated by the environment's
     # required reviewer: nothing reaches PyPI without a click.
@@ -76,4 +121,17 @@ jobs:
         with:
           name: dist
           path: dist/
+
+      # test and check ran other code in this run, which can replace an
+      # artifact; the digest from build's own outputs cannot be.
+      - name: The files are the ones build made
+        env:
+          DIGEST: ${{ needs.build.outputs.digest }}
+        run: |
+          actual=$(cd dist && sha256sum * | sha256sum | cut -d' ' -f1)
+          if [ "$actual" != "$DIGEST" ]; then
+            echo "::error::dist/ is not what the build job made"
+            exit 1
+          fi
+
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2

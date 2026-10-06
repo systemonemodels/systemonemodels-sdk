@@ -10,6 +10,9 @@
   `$LAYASTUDIO_HOME`, moves the workspace like the old name does, and an older
   copy is handed it under its old name. The workspace stays in
   `~/.layastudio/workspace`.
+- System One Models' site is systemonemodels.ai. Older entries below that
+  name systemonemodels.tech mean the same pages there; the CLI has called
+  `api.systemonemodels.ai` since 0.6.0.
 - Fixed: `systemone push --version X` for a version the repository already
   has hashed and uploaded every file, then was refused at the end (versions
   cannot be replaced). It now stops before uploading anything and asks for

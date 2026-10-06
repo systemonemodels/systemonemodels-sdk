@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.0
+
+- **`CreditsRequired`** (an `ApiError`) when the inference API answers 402
+  `credits_required`: the model runs on GPUs and the account has no credit
+  left. Code that catches `ApiError` keeps working; the CLI prints the API's
+  explanation with the link to Settings → Billing.
+
 ## 0.6.0
 
 - System One Models moved to systemonemodels.ai. The CLI and `Client` now call

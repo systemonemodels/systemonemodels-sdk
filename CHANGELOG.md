@@ -2,6 +2,14 @@
 
 ## Unreleased (0.7.1)
 
+- System One Studio's package and command are now `systemone-studio` (they
+  were `layastudio`), and `systemone run studio` runs it under that name. A
+  copy from before the rename (kept by `--no-update` or by an update that
+  could not run, or an older `--source` checkout) still starts as
+  `layastudio`. `$SYSTEMONE_STUDIO_HOME`, the studio variable that was
+  `$LAYASTUDIO_HOME`, moves the workspace like the old name does, and an older
+  copy is handed it under its old name. The workspace stays in
+  `~/.layastudio/workspace`.
 - Fixed: `systemone push --version X` for a version the repository already
   has hashed and uploaded every file, then was refused at the end (versions
   cannot be replaced). It now stops before uploading anything and asks for

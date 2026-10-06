@@ -463,7 +463,10 @@ def run_studio(
     ] = True,
     workspace: Annotated[
         Path | None,
-        typer.Option(help="Datasets, runs and checkpoints (default ~/.layastudio/workspace)."),
+        typer.Option(
+            help="Datasets, runs and checkpoints "
+            "(default $SYSTEMONE_STUDIO_HOME, else ~/.layastudio/workspace)."
+        ),
     ] = None,
     force: Annotated[
         bool,
@@ -484,8 +487,9 @@ def run_studio(
 ) -> None:
     """Fine-tune models locally in System One Studio, then publish them here in one click.
 
-    Fetches System One Studio (a separate open-source app) the first time, updates it
-    on later runs, sets up its Python environment and opens it in your browser.
+    Fetches System One Studio (a separate open-source app, formerly LayaStudio) the first
+    time, updates it on later runs, sets up its Python environment and opens it in your
+    browser.
     Anything after -- is passed to the studio, e.g. `-- --model aac6fef/laya-mlx`.
     """
     machine = hardware.detect(

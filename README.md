@@ -131,20 +131,23 @@ when it can and the CPU otherwise. NoulXP was called OpenDXP until 0.3.1, and
 
 ## Fine-tune locally with System One Studio
 
-System One Studio was called Laya Studio until September 2026.
+System One Studio was called LayaStudio until September 2026, and its package
+and command, now `systemone-studio`, were `layastudio` until October 2026.
 
 ```bash
 systemone run studio
 ```
 
-Fetches [System One Studio](https://github.com/biplovgautam/LayaStudio) (formerly
-Laya Studio) the first time,
-updates it on later runs, gives it its own Python environment (through
-[uv](https://docs.astral.sh/uv/) when it is installed, otherwise a virtual
-environment on Python 3.11+) and opens it in your browser. It offers to sign you
-in first, so the studio's Publish button can push a finished run to the registry.
-Your datasets and runs stay in `~/.layastudio/workspace` (the folder keeps its old name); the code lives in the
-platform's data folder and can be deleted at any time.
+Fetches [System One Studio][studio] the first time, updates it on later runs,
+gives it its own Python environment (through [uv](https://docs.astral.sh/uv/)
+when it is installed, otherwise a virtual environment on Python 3.11+), runs
+`systemone-studio` and opens it in your browser. A copy from before the rename,
+kept by `--no-update` or by an update that could not run, still starts as
+`layastudio`. It offers to sign you in first, so the studio's Publish button can
+push a finished run to the registry. Your datasets and runs stay in
+`~/.layastudio/workspace` (the folder keeps its old name), or in
+`$SYSTEMONE_STUDIO_HOME` (formerly `$LAYASTUDIO_HOME`) when it is set; the code
+lives in the platform's data folder and can be deleted at any time.
 
 `--port`, `--no-browser`, `--no-update` and `--workspace` do what they say, and
 anything after `--` goes to the studio: `systemone run studio -- --model
@@ -241,8 +244,10 @@ Issues and pull requests are welcome. For anything security-related, see
 - Manifest specification: <https://systemonemodels.ai/docs/manifest>
 - Changelog: [CHANGELOG.md](CHANGELOG.md)
 - Every System One model, compared: <https://systemonemodels.ai/system-one-models>
-- System One Studio (formerly Laya Studio): <https://github.com/biplovgautam/LayaStudio>
+- [System One Studio][studio] (formerly LayaStudio), the local fine-tuning app
 - System One Models on [LinkedIn](https://www.linkedin.com/company/system-one-models/), [X](https://x.com/SystemoneModels), [Hugging Face](https://huggingface.co/systemonemodels) and [Instagram](https://www.instagram.com/systemonemodels.ai/)
 - Contact: ceo@systemonemodels.ai
 
 Licensed under [Apache-2.0](LICENSE).
+
+[studio]: https://github.com/biplovgautam/LayaStudio

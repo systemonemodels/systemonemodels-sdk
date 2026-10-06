@@ -10,3 +10,24 @@ build/
 .coverage
 htmlcov/
 .DS_Store
+
+# Secrets never belong here: the repository is public. Tokens, keys and
+# publishing credentials stay in the environment or outside the checkout.
+.env
+.env.*
+!.env.example
+.envrc
+.push-token
+.pypirc
+.netrc
+.git-credentials
+credentials
+credentials.json
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_dsa*
+id_ecdsa*
+id_ed25519*

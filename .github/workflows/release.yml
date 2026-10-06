@@ -9,12 +9,22 @@ on:
 permissions:
   contents: read
 
+# uv at a fixed version, checked against its sha256: no run picks up a uv
+# release nobody chose. To move it, take the sha256 of
+# uv-x86_64-unknown-linux-gnu.tar.gz from that version's GitHub release.
+env:
+  PINNED_UV: "0.11.9"
+  PINNED_UV_SHA256: "5c43f82077ff0cd5aec588286cbabd89913e4d045bd4e8aa60b20b3ecffc36e3"
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          version: ${{ env.PINNED_UV }}
+          checksum: ${{ env.PINNED_UV_SHA256 }}
 
       # A tag that disagrees with the package version would publish a release
       # whose name lies about its contents, and PyPI never lets a version be
@@ -35,8 +45,9 @@ jobs:
             uv run --python "$py" --locked pytest -q
           done
 
-      - run: uv build
-      - run: uvx twine check --strict dist/*
+      # The build backend at fixed versions, checked against their hashes.
+      - run: uv build -b .github/build-constraints.txt --require-hashes
+      - run: uvx twine==7.0.0 check --strict dist/*
 
       - name: The wheel installs and runs in a clean environment
         run: |

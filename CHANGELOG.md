@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (0.7.1)
+## 0.7.1
 
 - System One Studio's package and command are now `systemone-studio` (they
   were `layastudio`), and `systemone run studio` runs it under that name. A

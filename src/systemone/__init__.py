@@ -12,7 +12,7 @@ client.decide("nokia/anyjev", "Customer: where is my parcel?", {
 })
 """
 
-__version__ = "0.7.0"
+__version__ = "0.7.1"
 
 from systemone.client import Client  # noqa: E402
 from systemone.errors import (  # noqa: E402
